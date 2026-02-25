@@ -1,0 +1,90 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* SENTINEL Dark Theme */
+    --background: 216 28% 7%;
+    --foreground: 213 31% 91%;
+
+    --card: 216 25% 11%;
+    --card-foreground: 213 31% 91%;
+
+    --popover: 216 25% 11%;
+    --popover-foreground: 213 31% 91%;
+
+    --primary: 217 100% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 216 22% 16%;
+    --secondary-foreground: 213 31% 91%;
+
+    --muted: 216 22% 16%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 217 100% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 216 22% 18%;
+    --input: 216 22% 18%;
+    --ring: 217 100% 55%;
+
+    --radius: 0.5rem;
+
+    /* SENTINEL Semantic Tokens */
+    --sentinel-bg: 216 28% 7%;
+    --sentinel-sidebar: 216 26% 9%;
+    --sentinel-card: 216 25% 11%;
+    --sentinel-card-hover: 216 24% 14%;
+    --sentinel-border: 216 22% 18%;
+    --sentinel-accent: 217 100% 55%;
+
+    --sentinel-success: 142 71% 45%;
+    --sentinel-warning: 38 92% 50%;
+    --sentinel-critical: 0 84% 60%;
+    --sentinel-info: 217 100% 55%;
+
+    --sidebar-background: 216 26% 9%;
+    --sidebar-foreground: 213 31% 91%;
+    --sidebar-primary: 217 100% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 216 22% 16%;
+    --sidebar-accent-foreground: 213 31% 91%;
+    --sidebar-border: 216 22% 15%;
+    --sidebar-ring: 217 100% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--sentinel-sidebar));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--sentinel-border));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
