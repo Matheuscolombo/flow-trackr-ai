@@ -1,5 +1,9 @@
-import { getConversionRate } from "@/data/mock";
 import type { FunnelMetrics } from "@/types";
+
+function getConversionRate(from: number, to: number): string {
+  if (from === 0) return "0.0";
+  return ((to / from) * 100).toFixed(1);
+}
 import { ArrowDown, Clock } from "lucide-react";
 
 interface FunnelChartProps {
@@ -35,7 +39,7 @@ export function FunnelChart({ metrics }: FunnelChartProps) {
           const convRate = nextStage
             ? getConversionRate(stage.total_leads, nextStage.total_leads)
             : null;
-          const dropRate = 100 - (convRate ?? 100);
+          const dropRate = 100 - (convRate !== null ? parseFloat(convRate) : 100);
 
           return (
             <div key={stage.stage_id} className="flex-1 flex flex-col items-center gap-1">
