@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Link2, Save, Plus, Trash2, GripVertical } from "lucide-react";
+import { Link2, Save, Plus, Trash2, GripVertical, ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ interface EditableStage {
   name: string;
   color: string;
   page_url: string;
+  thumbnail_url: string;
   order_index: number;
   isNew?: boolean;
 }
@@ -48,6 +49,7 @@ export function FunnelConfigTab({ stages, rules, funnelId, onStagesUpdated }: Fu
           name: s.name,
           color: s.color,
           page_url: s.page_url || "",
+          thumbnail_url: (s as any).thumbnail_url || "",
           order_index: s.order_index,
         }))
       );
@@ -71,6 +73,7 @@ export function FunnelConfigTab({ stages, rules, funnelId, onStagesUpdated }: Fu
         name: `Etapa ${prev.length + 1}`,
         color: STAGE_COLORS[prev.length % STAGE_COLORS.length],
         page_url: "",
+        thumbnail_url: "",
         order_index: prev.length,
         isNew: true,
       },
@@ -129,6 +132,7 @@ export function FunnelConfigTab({ stages, rules, funnelId, onStagesUpdated }: Fu
           color: stage.color,
           order_index: stage.order_index,
           page_url: stage.page_url.trim() || null,
+          thumbnail_url: stage.thumbnail_url.trim() || null,
         } as any);
       } else {
         await supabase.from("funnel_stages").update({
@@ -136,6 +140,7 @@ export function FunnelConfigTab({ stages, rules, funnelId, onStagesUpdated }: Fu
           color: stage.color,
           order_index: stage.order_index,
           page_url: stage.page_url.trim() || null,
+          thumbnail_url: stage.thumbnail_url.trim() || null,
         } as any).eq("id", stage.id);
       }
     }
@@ -226,6 +231,15 @@ export function FunnelConfigTab({ stages, rules, funnelId, onStagesUpdated }: Fu
                   value={stage.page_url}
                   onChange={(e) => updateField(stage.id, "page_url", e.target.value)}
                   placeholder="https://..."
+                  className="h-6 text-[10px] bg-transparent border-0 p-0 focus-visible:ring-0 flex-1 text-muted-foreground placeholder:text-muted-foreground/50"
+                />
+              </div>
+              <div className="flex items-center gap-2 pl-10">
+                <ImageIcon className="w-3 h-3 text-muted-foreground shrink-0" />
+                <Input
+                  value={stage.thumbnail_url}
+                  onChange={(e) => updateField(stage.id, "thumbnail_url", e.target.value)}
+                  placeholder="URL da imagem de thumbnail (opcional)"
                   className="h-6 text-[10px] bg-transparent border-0 p-0 focus-visible:ring-0 flex-1 text-muted-foreground placeholder:text-muted-foreground/50"
                 />
               </div>
