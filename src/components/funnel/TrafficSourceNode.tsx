@@ -45,6 +45,11 @@ const TrafficSourceNode = memo(({ data }: NodeProps) => {
           <p className="text-[9px] text-muted-foreground">leads</p>
         </div>
       </div>
+      {/* Invisible full-area handles for easy connection */}
+      <Handle type="target" position={Position.Left} id="full-target" className="!absolute !inset-0 !w-full !h-full !opacity-0 !rounded-2xl !transform-none !left-0 !top-0 !border-0" />
+      <Handle type="source" position={Position.Right} id="full-source" className="!absolute !inset-0 !w-full !h-full !opacity-0 !rounded-2xl !transform-none !left-0 !top-0 !border-0" />
+
+      {/* Visual indicator handles */}
       <Handle type="target" position={Position.Left} className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-left-1" />
       <Handle type="source" position={Position.Right} className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-right-1" />
       <Handle type="source" position={Position.Bottom} id="bottom-source" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-bottom-1" />
