@@ -52,6 +52,57 @@ export type Database = {
           },
         ]
       }
+      funnel_source_nodes: {
+        Row: {
+          connected_stage_id: string | null
+          created_at: string
+          funnel_id: string
+          icon_type: string
+          id: string
+          lead_count: number
+          name: string
+          position_x: number
+          position_y: number
+        }
+        Insert: {
+          connected_stage_id?: string | null
+          created_at?: string
+          funnel_id: string
+          icon_type?: string
+          id?: string
+          lead_count?: number
+          name: string
+          position_x?: number
+          position_y?: number
+        }
+        Update: {
+          connected_stage_id?: string | null
+          created_at?: string
+          funnel_id?: string
+          icon_type?: string
+          id?: string
+          lead_count?: number
+          name?: string
+          position_x?: number
+          position_y?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "funnel_source_nodes_connected_stage_id_fkey"
+            columns: ["connected_stage_id"]
+            isOneToOne: false
+            referencedRelation: "funnel_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "funnel_source_nodes_funnel_id_fkey"
+            columns: ["funnel_id"]
+            isOneToOne: false
+            referencedRelation: "funnels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       funnel_stages: {
         Row: {
           color: string
@@ -63,6 +114,7 @@ export type Database = {
           page_url: string | null
           position_x: number
           position_y: number
+          thumbnail_url: string | null
         }
         Insert: {
           color?: string
@@ -74,6 +126,7 @@ export type Database = {
           page_url?: string | null
           position_x?: number
           position_y?: number
+          thumbnail_url?: string | null
         }
         Update: {
           color?: string
@@ -85,6 +138,7 @@ export type Database = {
           page_url?: string | null
           position_x?: number
           position_y?: number
+          thumbnail_url?: string | null
         }
         Relationships: [
           {
