@@ -17,13 +17,14 @@ import {
   ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import Dagre from "@dagrejs/dagre";
 import FunnelFlowNode, { type FlowNodeData } from "./FunnelFlowNode";
 import TrafficSourceNode, { type TrafficIconType, type TrafficSourceNodeData } from "./TrafficSourceNode";
 import type { FunnelStage, StageTransitionRule } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone, Trash2, MessageCircle } from "lucide-react";
+import { Plus, Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone, Trash2, MessageCircle, LayoutGrid } from "lucide-react";
 
 interface StageCount {
   stage_id: string;
@@ -68,6 +69,41 @@ function buildAutoLayout(stages: FunnelStage[]): { x: number; y: number }[] {
     x: (i % cols) * 300 + 200,
     y: Math.floor(i / cols) * 250,
   }));
+}
+
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 200;
+const SOURCE_NODE_WIDTH = 140;
+const SOURCE_NODE_HEIGHT = 120;
+
+function runDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
+  const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "LR", nodesep: 80, ranksep: 200, marginx: 50, marginy: 50 });
+
+  nodes.forEach((node) => {
+    const isSource = node.type === "source";
+    g.setNode(node.id, {
+      width: isSource ? SOURCE_NODE_WIDTH : NODE_WIDTH,
+      height: isSource ? SOURCE_NODE_HEIGHT : NODE_HEIGHT,
+    });
+  });
+
+  edges.forEach((edge) => {
+    g.setEdge(edge.source, edge.target);
+  });
+
+  Dagre.layout(g);
+
+  return nodes.map((node) => {
+    const pos = g.node(node.id);
+    const isSource = node.type === "source";
+    const w = isSource ? SOURCE_NODE_WIDTH : NODE_WIDTH;
+    const h = isSource ? SOURCE_NODE_HEIGHT : NODE_HEIGHT;
+    return {
+      ...node,
+      position: { x: pos.x - w / 2, y: pos.y - h / 2 },
+    };
+  });
 }
 
 function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) {
@@ -287,6 +323,15 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
     }
   };
 
+  const { fitView } = useReactFlow();
+
+  const autoOrganize = useCallback(() => {
+    const layouted = runDagreLayout(nodes, edges);
+    setNodes(layouted);
+    savePositions(layouted);
+    setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50);
+  }, [nodes, edges, setNodes, savePositions, fitView]);
+
   const deleteSourceNode = async (nodeId: string) => {
     await supabase.from("funnel_source_nodes" as any).delete().eq("id", nodeId);
     setSourceNodes((prev) => prev.filter((s) => s.id !== nodeId));
@@ -295,7 +340,11 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
   return (
     <div className="space-y-3">
       {/* Toolbar */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={autoOrganize}>
+          <LayoutGrid className="w-3.5 h-3.5" />
+          Auto-organizar
+        </Button>
         <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
           <PopoverTrigger asChild>
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5">
