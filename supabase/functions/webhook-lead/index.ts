@@ -107,6 +107,8 @@ Deno.serve(async (req) => {
       if (byEmail) leadId = byEmail.id;
     }
 
+    const isExistingLead = !!leadId;
+
     if (!leadId) {
       const { data: newLead } = await serviceClient
         .from("leads")
@@ -131,6 +133,18 @@ Deno.serve(async (req) => {
         });
       }
       leadId = newLead.id;
+    } else {
+      // Lead já existe — incrementar signup_count e registrar evento de cadastro repetido
+      await serviceClient.rpc("increment_signup_count", { p_lead_id: leadId });
+
+      await serviceClient.from("lead_events").insert({
+        funnel_id: funnel.id,
+        lead_id: leadId,
+        event_name: "cadastro_repetido",
+        source: "webhook",
+        payload_raw: { phone, email, name, original_event: event || "lead_created", metadata },
+        timestamp_event: body.timestamp || new Date().toISOString(),
+      });
     }
 
     // Find transition rule for this event
