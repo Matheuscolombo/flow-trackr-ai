@@ -67,6 +67,7 @@ function timeDiff(a: string, b: string): string {
 
 
 const eventConfig: Record<string, { icon: React.ElementType; dot: string; label: string }> = {
+  signup:               { icon: UserPlus,      dot: "bg-blue-400",             label: "Cadastro no funil" },
   base_importado:       { icon: Users,         dot: "bg-muted-foreground",     label: "Importado" },
   pagina_cadastro:      { icon: CheckCircle2,  dot: "bg-blue-400",             label: "Cadastro" },
   cadastro_repetido:    { icon: UserPlus,       dot: "bg-yellow-400",           label: "Cadastro repetido" },
@@ -560,7 +561,11 @@ function TimelineEvents({ lead, sales, realEvents, loadingEvents, loadingSales }
         type: "real",
         timestamp: ev.timestamp_event,
         label,
-        detail: ev.event_name === "re_signup" ? "Cadastrou novamente neste funil" : undefined,
+        detail: ev.event_name === "signup"
+          ? `Funil: ${(ev.payload_raw as Record<string, unknown>)?.funnel_name || "—"}`
+          : ev.event_name === "re_signup"
+          ? "Cadastrou novamente neste funil"
+          : undefined,
         icon: cfg.icon,
         dotColor: cfg.dot,
         realEvent: ev,
