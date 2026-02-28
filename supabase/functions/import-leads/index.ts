@@ -729,6 +729,8 @@ async function handleFunnelImport(
       if (existingInFunnel.has(leadId)) {
         duplicates++;
         duplicateLeadIds.push(leadId);
+        // Still track signup data for this duplicate so we update signup_count later
+        signupCountByContact.set(contactKey, signupData);
         continue;
       }
     } else {

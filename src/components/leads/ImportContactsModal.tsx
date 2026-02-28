@@ -87,7 +87,7 @@ type ImportMode = "funnel" | "event_only" | "backfill";
 
 const NONE_VALUE = "__none__";
 const ALL_CAMPAIGNS = "__all__";
-const BATCH_SIZE = 300;
+const BATCH_SIZE = 5000;
 const TEMPLATE_CSV = `nome,telefone,email\nAna Silva,11999990001,ana@email.com\nCarlos Melo,11999990002,carlos@email.com`;
 
 function splitCSVIntoBatches(text: string): string[] {
