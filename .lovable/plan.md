@@ -1,41 +1,33 @@
 
 
-## Melhorias de UX/UI para o Catálogo de Produtos
+## Adicionar Ordenação ao Catálogo de Produtos
 
-Baseado na screenshot atual e no código, aqui estão as melhorias propostas:
+Adicionar um dropdown/select de ordenação ao lado dos filtros existentes no `ProductCardGrid.tsx`.
 
-### 1. Cards ao invés de tabela pura
-Trocar a `<Table>` por **cards** com layout mais visual e espaçoso. Cada produto vira um card com:
-- Nome em destaque (font-semibold, tamanho maior)
-- Descrição abaixo em texto muted
-- Badges de vínculos com mais padding e melhor legibilidade
-- Stats (vendas/receita) com ícones e formatação mais clara
-- Ações (editar/excluir) como ícones no canto superior direito do card
+### Opções de ordenação
+1. **Nome (A-Z)** — padrão atual
+2. **Nome (Z-A)**
+3. **Receita (maior → menor)**
+4. **Receita (menor → maior)**
+5. **Vendas (maior → menor)**
+6. **Vendas (menor → maior)**
+7. **Mais recente** (created_at desc)
+8. **Mais vínculos** (quantidade de mappings desc)
 
-### 2. Barra de busca + filtro por plataforma
-Adicionar acima da lista:
-- Input de busca para filtrar produtos por nome
-- Chips de filtro por plataforma (Eduzz, Hotmart, etc.) baseados nas plataformas presentes nos mappings
+### Implementação
 
-### 3. Melhorias visuais nos badges de vínculo
-- Badges maiores com melhor contraste e legibilidade
-- Ícone da plataforma (ou letra inicial colorida) ao invés de só texto
-- Botão de remover vínculo (X) mais visível com hover state mais claro
+**Arquivo:** `src/components/products/ProductCardGrid.tsx`
 
-### 4. Empty state e loading melhorados
-- Skeleton loading ao invés de spinner simples
-- Empty state com ilustração/ícone grande e CTA mais claro
+- Adicionar estado `sortBy` com as opções acima
+- Adicionar um `<Select>` compacto ao lado da barra de busca e filtros de plataforma
+- Aplicar `.sort()` no array `filtered` antes do render, usando `catalogStats` para ordenar por receita/vendas
+- Ícone `ArrowUpDown` do lucide no trigger do select
 
-### 5. Stats em destaque
-- Vendas e receita com mini-ícones (ShoppingCart, DollarSign)
-- Números com fonte tabular-nums maior e cor de destaque para receita
+### Layout da barra de filtros (atualizado)
 
-### Arquivos a modificar
-- `src/components/products/ProductCatalogTable.tsx` — refatorar de tabela para card grid com busca/filtro
-- `src/pages/ProductsPage.tsx` — ajustar layout da seção de catálogo
+```text
+[🔍 Buscar produto...        ] [Ordenar: Receita ↓ ▾] [Todos] [Eduzz] [Hotmart]
+```
 
-### Abordagem
-- Manter a mesma lógica de dados (hooks inalterados)
-- Reutilizar os mesmos componentes UI (Badge, Button, Input)
-- Manter as funcionalidades de editar/excluir/remover vínculo inline
+Nenhuma mudança em hooks ou banco de dados — apenas lógica de sort no frontend.
 
