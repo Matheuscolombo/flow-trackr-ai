@@ -613,6 +613,16 @@ function TimelineEvents({ lead, sales, realEvents, loadingEvents, loadingSales }
                       <div className="flex items-center gap-2 flex-wrap">
                         <Icon className="w-3 h-3 text-muted-foreground shrink-0" />
                         <span className="text-xs font-medium text-foreground">{ev.label}</span>
+                        {ev.type === "real" && ev.realEvent && (
+                          <Badge
+                            className={`text-[9px] px-1.5 py-0 h-4 border ${
+                              sourceColors[ev.realEvent.source] || sourceColors.api
+                            }`}
+                            variant="outline"
+                          >
+                            {ev.realEvent.source}
+                          </Badge>
+                        )}
                         {prev && (
                           <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />
