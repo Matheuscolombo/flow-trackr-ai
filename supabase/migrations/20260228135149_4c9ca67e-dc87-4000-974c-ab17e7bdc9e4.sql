@@ -1,0 +1,1 @@
+ALTER TABLE public.funnel_stages ADD COLUMN page_url text DEFAULT NULL;

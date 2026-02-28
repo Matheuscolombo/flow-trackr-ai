@@ -60,6 +60,7 @@ export type Database = {
           id: string
           name: string
           order_index: number
+          page_url: string | null
         }
         Insert: {
           color?: string
@@ -68,6 +69,7 @@ export type Database = {
           id?: string
           name: string
           order_index?: number
+          page_url?: string | null
         }
         Update: {
           color?: string
@@ -76,6 +78,7 @@ export type Database = {
           id?: string
           name?: string
           order_index?: number
+          page_url?: string | null
         }
         Relationships: [
           {

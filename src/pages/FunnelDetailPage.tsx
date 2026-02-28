@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { KanbanBoard } from "@/components/funnel/KanbanBoard";
 import { WebhookConfig } from "@/components/funnel/WebhookConfig";
 import { FunnelVisual } from "@/components/funnel/FunnelVisual";
+import { FunnelConfigTab } from "@/components/funnel/FunnelConfigTab";
 import { Badge } from "@/components/ui/badge";
 import type { FunnelStage, Lead } from "@/types";
 
@@ -601,47 +602,7 @@ const FunnelDetailPage = () => {
         )}
 
         {activeTab === "config" && (
-          <div className="bg-card border border-border rounded-lg p-5 space-y-4 max-w-2xl">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-1">Etapas do funil</h3>
-              <div className="space-y-1.5 mt-3">
-                {stages.map((stage, i) => (
-                  <div key={stage.id} className="flex items-center gap-3 bg-background border border-border rounded-md px-3 py-2">
-                    <span className="text-[10px] text-muted-foreground w-4 text-right">{i + 1}</span>
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
-                    <span className="text-xs text-foreground flex-1">{stage.name}</span>
-                  </div>
-                ))}
-                {stages.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Nenhuma etapa configurada.</p>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-1 mt-4">Regras de Transição</h3>
-              <div className="space-y-1.5 mt-3">
-                {rules.map((rule) => {
-                  const toStage = stages.find((s) => s.id === rule.to_stage_id);
-                  return (
-                    <div key={rule.id} className="flex items-center gap-3 bg-background border border-border rounded-md px-3 py-2">
-                      <code className="text-xs font-mono text-primary flex-1">{rule.event_name}</code>
-                      <span className="text-muted-foreground text-xs">→</span>
-                      <div className="flex items-center gap-1.5">
-                        {toStage && (
-                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: toStage.color }} />
-                        )}
-                        <span className="text-xs text-foreground">{toStage?.name || "—"}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-                {rules.length === 0 && (
-                  <p className="text-xs text-muted-foreground">Nenhuma regra configurada.</p>
-                )}
-              </div>
-            </div>
-          </div>
+          <FunnelConfigTab stages={stages} rules={rules} />
         )}
 
         {activeTab === "webhook" && (

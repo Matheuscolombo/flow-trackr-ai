@@ -19,6 +19,7 @@ interface NewStage {
   name: string;
   color: string;
   order_index: number;
+  page_url: string;
 }
 
 interface NewRule {
@@ -45,9 +46,9 @@ export function FunnelBuilder({ onSave }: FunnelBuilderProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [stages, setStages] = useState<NewStage[]>([
-    { id: "ns-1", name: "Lead Novo", color: "#3B82F6", order_index: 0 },
-    { id: "ns-2", name: "Contato Feito", color: "#8B5CF6", order_index: 1 },
-    { id: "ns-3", name: "Fechado", color: "#10B981", order_index: 2 },
+    { id: "ns-1", name: "Lead Novo", color: "#3B82F6", order_index: 0, page_url: "" },
+    { id: "ns-2", name: "Contato Feito", color: "#8B5CF6", order_index: 1, page_url: "" },
+    { id: "ns-3", name: "Fechado", color: "#10B981", order_index: 2, page_url: "" },
   ]);
   const [rules, setRules] = useState<NewRule[]>([
     { id: "nr-1", event_name: "lead_created", to_stage_id: "ns-1" },
@@ -66,6 +67,7 @@ export function FunnelBuilder({ onSave }: FunnelBuilderProps) {
         name: `Etapa ${prev.length + 1}`,
         color: STAGE_COLORS[prev.length % STAGE_COLORS.length],
         order_index: prev.length,
+        page_url: "",
       },
     ]);
   };
@@ -80,6 +82,10 @@ export function FunnelBuilder({ onSave }: FunnelBuilderProps) {
 
   const updateStageColor = (id: string, color: string) => {
     setStages((prev) => prev.map((s) => (s.id === id ? { ...s, color } : s)));
+  };
+
+  const updateStagePageUrl = (id: string, page_url: string) => {
+    setStages((prev) => prev.map((s) => (s.id === id ? { ...s, page_url } : s)));
   };
 
   const addRule = () => {
@@ -146,44 +152,58 @@ export function FunnelBuilder({ onSave }: FunnelBuilderProps) {
         </div>
         <div className="space-y-2">
           {stages.map((stage, idx) => (
-            <div key={stage.id} className="flex items-center gap-2 bg-background border border-border rounded-md px-3 py-2">
-              <GripVertical className="w-3.5 h-3.5 text-muted-foreground cursor-grab" />
-              <div className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
-              <Input
-                value={stage.name}
-                onChange={(e) => updateStageName(stage.id, e.target.value)}
-                className="h-7 text-xs bg-transparent border-0 p-0 focus-visible:ring-0 flex-1"
-              />
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    className="w-6 h-6 rounded-full border-2 border-border hover:border-foreground/50 transition-colors shrink-0"
-                    style={{ backgroundColor: stage.color }}
-                    title="Trocar cor"
-                  />
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-2" align="end" side="top">
-                  <div className="grid grid-cols-8 gap-1.5">
-                    {STAGE_COLORS.map((c) => (
-                      <button
-                        key={c}
-                        className={`w-5 h-5 rounded-full transition-transform ${stage.color === c ? "scale-110 ring-2 ring-offset-1 ring-offset-background ring-primary" : "hover:scale-110"}`}
-                        style={{ backgroundColor: c }}
-                        onClick={() => updateStageColor(stage.id, c)}
-                      />
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 text-muted-foreground hover:text-sentinel-critical"
-                onClick={() => removeStage(stage.id)}
-                disabled={stages.length <= 1}
-              >
-                <Trash2 className="w-3 h-3" />
-              </Button>
+            <div key={stage.id} className="bg-background border border-border rounded-md px-3 py-2 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <GripVertical className="w-3.5 h-3.5 text-muted-foreground cursor-grab" />
+                <div className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
+                <Input
+                  value={stage.name}
+                  onChange={(e) => updateStageName(stage.id, e.target.value)}
+                  className="h-7 text-xs bg-transparent border-0 p-0 focus-visible:ring-0 flex-1"
+                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="w-6 h-6 rounded-full border-2 border-border hover:border-foreground/50 transition-colors shrink-0"
+                      style={{ backgroundColor: stage.color }}
+                      title="Trocar cor"
+                    />
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2" align="end" side="top">
+                    <div className="grid grid-cols-8 gap-1.5">
+                      {STAGE_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          className={`w-5 h-5 rounded-full transition-transform ${stage.color === c ? "scale-110 ring-2 ring-offset-1 ring-offset-background ring-primary" : "hover:scale-110"}`}
+                          style={{ backgroundColor: c }}
+                          onClick={() => updateStageColor(stage.id, c)}
+                        />
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 text-muted-foreground hover:text-sentinel-critical"
+                  onClick={() => removeStage(stage.id)}
+                  disabled={stages.length <= 1}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-2 pl-7">
+                <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0" />
+                <Input
+                  value={stage.page_url}
+                  onChange={(e) => updateStagePageUrl(stage.id, e.target.value)}
+                  placeholder="Link da página (opcional)"
+                  className="h-6 text-[10px] bg-transparent border-0 p-0 focus-visible:ring-0 flex-1 text-muted-foreground placeholder:text-muted-foreground/50"
+                />
+                <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 shrink-0">
+                  {stage.page_url.trim() ? "Página" : "Evento"}
+                </Badge>
+              </div>
             </div>
           ))}
         </div>
