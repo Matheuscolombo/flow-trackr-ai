@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { Pencil, Trash2, Loader2, Check, X, ShoppingCart, DollarSign, Search, Package } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Pencil, Trash2, Loader2, Check, X, ShoppingCart, DollarSign, Search, Package, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useProductCatalog,
   useUpdateProduct,
@@ -200,6 +201,7 @@ export function ProductCardGrid() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [platformFilter, setPlatformFilter] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState("name-asc");
 
   const products = data?.products || [];
   const mappings = data?.mappings || [];
@@ -222,6 +224,29 @@ export function ProductCardGrid() {
       (mappingsByProduct[p.id] || []).some((m) => m.platform === platformFilter);
     return matchesSearch && matchesPlatform;
   });
+
+  // Sort products
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      const statsA = catalogStats[a.id] || { total_sales: 0, total_revenue: 0 };
+      const statsB = catalogStats[b.id] || { total_sales: 0, total_revenue: 0 };
+      const mappingsA = (mappingsByProduct[a.id] || []).length;
+      const mappingsB = (mappingsByProduct[b.id] || []).length;
+      switch (sortBy) {
+        case "name-asc": return a.name.localeCompare(b.name, "pt-BR");
+        case "name-desc": return b.name.localeCompare(a.name, "pt-BR");
+        case "revenue-desc": return statsB.total_revenue - statsA.total_revenue;
+        case "revenue-asc": return statsA.total_revenue - statsB.total_revenue;
+        case "sales-desc": return statsB.total_sales - statsA.total_sales;
+        case "sales-asc": return statsA.total_sales - statsB.total_sales;
+        case "recent": return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case "mappings": return mappingsB - mappingsA;
+        default: return 0;
+      }
+    });
+    return arr;
+  }, [filtered, sortBy, catalogStats, mappingsByProduct]);
 
   if (isLoading) return <LoadingSkeleton />;
 
@@ -271,6 +296,22 @@ export function ProductCardGrid() {
             className="pl-8 h-8 text-sm"
           />
         </div>
+        <Select value={sortBy} onValueChange={setSortBy}>
+          <SelectTrigger className="h-8 w-auto min-w-[180px] text-xs gap-1.5">
+            <ArrowUpDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name-asc">Nome (A → Z)</SelectItem>
+            <SelectItem value="name-desc">Nome (Z → A)</SelectItem>
+            <SelectItem value="revenue-desc">Receita (maior)</SelectItem>
+            <SelectItem value="revenue-asc">Receita (menor)</SelectItem>
+            <SelectItem value="sales-desc">Vendas (maior)</SelectItem>
+            <SelectItem value="sales-asc">Vendas (menor)</SelectItem>
+            <SelectItem value="recent">Mais recente</SelectItem>
+            <SelectItem value="mappings">Mais vínculos</SelectItem>
+          </SelectContent>
+        </Select>
         {platforms.length > 1 && (
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
@@ -301,13 +342,13 @@ export function ProductCardGrid() {
       </div>
 
       {/* Cards grid */}
-      {filtered.length === 0 ? (
+      {sorted.length === 0 ? (
         <p className="text-center text-sm text-muted-foreground py-8">
           Nenhum produto encontrado.
         </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map((product) =>
+          {sorted.map((product) =>
             editingId === product.id ? (
               <EditCard key={product.id} product={product} onDone={() => setEditingId(null)} />
             ) : (
