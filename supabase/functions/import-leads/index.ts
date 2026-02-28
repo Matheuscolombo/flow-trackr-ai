@@ -832,7 +832,7 @@ async function handleFunnelImport(
       if (lastTs) {
         await supabase
           .from("leads")
-          .update({ last_signup_at: new Date(lastTs.replace(" ", "T")).toISOString(), updated_at: new Date().toISOString() })
+          .update({ last_signup_at: safeISODate(lastTs), updated_at: new Date().toISOString() })
           .eq("id", upd.id);
       }
     } else {
@@ -842,7 +842,7 @@ async function handleFunnelImport(
         .from("leads")
         .update({
           signup_count: upd.count,
-          last_signup_at: lastTs ? new Date(lastTs.replace(" ", "T")).toISOString() : null,
+          last_signup_at: lastTs ? safeISODate(lastTs) : null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", upd.id);
@@ -853,7 +853,7 @@ async function handleFunnelImport(
       // For cross-batch duplicates: ALL timestamps are re-signups (original was in previous batch)
       for (let i = 0; i < upd.timestamps.length; i++) {
         const ts = upd.timestamps[i];
-        const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+        const isoTs = safeISODate(ts);
         eventRows.push({
           lead_id: upd.id,
           funnel_id: funnelId,
@@ -872,7 +872,7 @@ async function handleFunnelImport(
       // For new leads in this funnel: create signup event for the FIRST timestamp
       if (upd.timestamps.length > 0) {
         const firstTs = upd.timestamps[0];
-        const isoFirstTs = new Date(firstTs.replace(" ", "T")).toISOString();
+        const isoFirstTs = safeISODate(firstTs);
         eventRows.push({
           lead_id: upd.id,
           funnel_id: funnelId,
@@ -887,7 +887,7 @@ async function handleFunnelImport(
       if (upd.count > 1) {
         for (let i = 1; i < upd.timestamps.length; i++) {
           const ts = upd.timestamps[i];
-          const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+          const isoTs = safeISODate(ts);
           eventRows.push({
             lead_id: upd.id,
             funnel_id: funnelId,
@@ -966,7 +966,7 @@ async function handleRecalculateSignups(
       .from("leads")
       .update({
         signup_count: signupData.count,
-        last_signup_at: lastTs ? new Date(lastTs.replace(" ", "T")).toISOString() : null,
+        last_signup_at: lastTs ? safeISODate(lastTs) : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", leadId);
@@ -976,7 +976,7 @@ async function handleRecalculateSignups(
     if (signupData.count > 1 && funnelId) {
       for (let i = 1; i < signupData.timestamps.length; i++) {
         const ts = signupData.timestamps[i];
-        const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+        const isoTs = safeISODate(ts);
         eventRows.push({
           lead_id: leadId,
           funnel_id: funnelId,
