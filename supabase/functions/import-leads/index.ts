@@ -695,6 +695,10 @@ async function handleFunnelImport(
 
   const existingInFunnel = new Set((existingPositions || []).map((p: { lead_id: string }) => p.lead_id));
 
+  // Get funnel name for event payloads
+  const { data: funnelMeta } = await supabase.from("funnels").select("name").eq("id", funnelId).single();
+  const funnelName = funnelMeta?.name || "Funil";
+
   // Smart first pass: count distinct signups per contact (dedup by phone+minute)
   const { contactSignups, noContact: noContactFirstPass } = countDistinctSignups(rows, overrides, headers);
 
