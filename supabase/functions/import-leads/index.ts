@@ -129,9 +129,21 @@ function getBackfillValue(row: Record<string, string>, fieldKey: string, headers
 
 function cleanUtmValue(val: string): string | null {
   if (!val) return null;
-  // Filter out template placeholders like {utm_source}
   if (val.startsWith("{") && val.endsWith("}")) return null;
   return val;
+}
+
+function safeISODate(val: string | null): string {
+  if (!val) return new Date().toISOString();
+  const trimmed = val.trim();
+  // Try parsing "YYYY-MM-DD HH:mm:ss" by adding T and Z
+  const isoAttempt = trimmed.replace(" ", "T");
+  const d = new Date(isoAttempt.includes("T") && !isoAttempt.endsWith("Z") ? isoAttempt + "Z" : isoAttempt);
+  if (!isNaN(d.getTime())) return d.toISOString();
+  // Fallback: try direct parse
+  const d2 = new Date(trimmed);
+  if (!isNaN(d2.getTime())) return d2.toISOString();
+  return new Date().toISOString();
 }
 
 // ─── Mode: backfill ──────────────────────────────────────────────────────────
@@ -173,8 +185,8 @@ async function handleBackfill(
   const dateField = findBackfillField(headers, "conversion_date");
   if (dateField) {
     rows.sort((a, b) => {
-      const da = new Date(a[dateField] || "").getTime() || 0;
-      const db = new Date(b[dateField] || "").getTime() || 0;
+      const da = new Date(safeISODate(a[dateField] || null)).getTime();
+      const db = new Date(safeISODate(b[dateField] || null)).getTime();
       return da - db;
     });
   }
@@ -241,7 +253,7 @@ async function handleBackfill(
 
     let leadId = (email && emailIndex[email]) || (phone && phoneIndex[phone]) || null;
 
-    const timestamp = convDate ? new Date(convDate).toISOString() : new Date().toISOString();
+    const timestamp = safeISODate(convDate);
 
     const payload = {
       phone, email, name, device, page_url: pageUrl,
@@ -317,7 +329,7 @@ async function handleBackfill(
     const utmCampaign = cleanUtmValue(getBackfillValue(row, "utm_campaign", headers));
     const utmContent = cleanUtmValue(getBackfillValue(row, "utm_content", headers));
     const utmTerm = cleanUtmValue(getBackfillValue(row, "utm_term", headers));
-    const timestamp = convDate ? new Date(convDate).toISOString() : new Date().toISOString();
+    const timestamp = safeISODate(convDate);
 
     const payload = {
       phone, email, name, device, page_url: pageUrl,
