@@ -1,7 +1,7 @@
 import { Package, AlertTriangle, BookOpen } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { UnmappedProductsList } from "@/components/products/UnmappedProductsList";
-import { ProductCatalogTable } from "@/components/products/ProductCatalogTable";
+import { ProductCardGrid } from "@/components/products/ProductCardGrid";
 import { useProductCatalog } from "@/hooks/useProductCatalog";
 import { useUnmappedProducts } from "@/hooks/useProductCatalog";
 
@@ -50,7 +50,7 @@ export default function ProductsPage() {
             </span>
           )}
         </div>
-        <ProductCatalogTable />
+        <ProductCardGrid />
       </section>
     </div>
   );
