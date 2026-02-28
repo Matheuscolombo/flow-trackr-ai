@@ -278,7 +278,7 @@ export function FunnelFlowEditor({ stages, rules, stageCounts, funnelId }: Props
       </div>
 
       {/* Canvas */}
-      <div className="w-full h-[600px] rounded-xl border border-border bg-card overflow-hidden">
+      <div className="w-full h-[700px] rounded-xl border border-border bg-card overflow-hidden">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -286,7 +286,10 @@ export function FunnelFlowEditor({ stages, rules, stageCounts, funnelId }: Props
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.3 }}
+          fitViewOptions={{ padding: 0.15, minZoom: 0.6, maxZoom: 1.2 }}
+          minZoom={0.3}
+          maxZoom={2}
+          defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
           proOptions={{ hideAttribution: true }}
           className="bg-background"
         >
