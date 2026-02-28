@@ -61,6 +61,7 @@ export interface FunnelStage {
   name: string;
   order_index: number;
   color: string;
+  page_url: string | null;
   created_at: string;
 }
 

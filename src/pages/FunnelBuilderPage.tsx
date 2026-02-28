@@ -16,7 +16,7 @@ const FunnelBuilderPage = () => {
   const handleSave = async (data: {
     name: string;
     description: string;
-    stages: { id: string; name: string; color: string; order_index: number }[];
+    stages: { id: string; name: string; color: string; order_index: number; page_url: string }[];
     rules: { id: string; event_name: string; to_stage_id: string }[];
     webhook_token: string;
   }) => {
@@ -55,6 +55,7 @@ const FunnelBuilderPage = () => {
           name: stage.name,
           color: stage.color,
           order_index: stage.order_index,
+          page_url: stage.page_url.trim() || null,
         })
         .select("id")
         .single();
