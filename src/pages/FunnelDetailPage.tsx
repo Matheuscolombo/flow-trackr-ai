@@ -1,5 +1,5 @@
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Settings, Webhook, Columns, ChevronRight, Loader2, Clock, TrendingUp, BarChart2, Pencil, Search, X } from "lucide-react";
+import { ArrowLeft, Settings, Webhook, Columns, ChevronRight, Loader2, Clock, TrendingUp, BarChart2, Pencil, Search, X, Users, UserPlus, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -133,6 +133,7 @@ const FunnelDetailPage = () => {
   const [stageCounts, setStageCounts] = useState<StageCount[]>([]);
   const [leadsByStage, setLeadsByStage] = useState<Record<string, Lead[]>>({});
   const [leadsBuyerStats, setLeadsBuyerStats] = useState<{ singleBuyers: number; multiBuyers: number } | null>(null);
+  const [signupStats, setSignupStats] = useState<{ totalSignups: number; uniqueLeads: number; duplicateSignups: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [serverSearchResults, setServerSearchResults] = useState<Record<string, Lead[]> | null>(null);
@@ -274,6 +275,18 @@ const FunnelDetailPage = () => {
             });
           }
 
+          // Fetch signup stats (total signups, unique, duplicates)
+          const { data: sStats } = await supabase
+            .rpc("get_funnel_signup_stats" as any, { p_funnel_id: id });
+          if (sStats && sStats.length > 0) {
+            const row = sStats[0];
+            setSignupStats({
+              totalSignups: Number(row.total_signups ?? 0),
+              uniqueLeads: Number(row.unique_leads ?? 0),
+              duplicateSignups: Number(row.duplicate_signups ?? 0),
+            });
+          }
+
       setLoading(false);
     });
   }, [id]);
@@ -407,6 +420,38 @@ const FunnelDetailPage = () => {
       <div className="flex-1 overflow-y-auto p-6">
         {activeTab === "kanban" && (
           <div className="space-y-3">
+            {/* Signup stats */}
+            {signupStats && signupStats.totalSignups > 0 && (
+              <div className="flex gap-3 flex-wrap">
+                <div className="bg-card border border-border rounded-lg px-4 py-3 min-w-[140px]">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <UserPlus className="w-3 h-3 text-primary" />
+                    <span className="text-[10px] text-muted-foreground font-medium">Total Cadastros</span>
+                  </div>
+                  <p className="text-lg font-bold text-foreground tabular-nums">{signupStats.totalSignups.toLocaleString("pt-BR")}</p>
+                </div>
+                <div className="bg-card border border-border rounded-lg px-4 py-3 min-w-[140px]">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Users className="w-3 h-3 text-sentinel-success" />
+                    <span className="text-[10px] text-muted-foreground font-medium">Únicos</span>
+                  </div>
+                  <p className="text-lg font-bold text-foreground tabular-nums">{signupStats.uniqueLeads.toLocaleString("pt-BR")}</p>
+                </div>
+                <div className="bg-card border border-border rounded-lg px-4 py-3 min-w-[140px]">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Copy className="w-3 h-3 text-yellow-400" />
+                    <span className="text-[10px] text-muted-foreground font-medium">Duplicados</span>
+                  </div>
+                  <p className="text-lg font-bold text-yellow-400 tabular-nums">{signupStats.duplicateSignups.toLocaleString("pt-BR")}</p>
+                  {signupStats.uniqueLeads > 0 && (
+                    <p className="text-[9px] text-muted-foreground">
+                      {((signupStats.duplicateSignups / signupStats.totalSignups) * 100).toFixed(1)}% do total
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Stage summary cards */}
             <div className="flex gap-3 flex-wrap">
               {stages.map((stage) => {

@@ -799,6 +799,74 @@ async function handleFunnelImport(
   );
 }
 
+// ─── Mode: recalculate_signups ───────────────────────────────────────────────
+// Re-processes a CSV to update signup_count without importing new leads or positions
+
+async function handleRecalculateSignups(
+  supabase: ReturnType<typeof createClient>,
+  workspaceId: string,
+  body: Record<string, unknown>
+) {
+  const { csvText, fieldOverrides } = body as {
+    csvText: string;
+    fieldOverrides?: Record<string, string>;
+  };
+
+  if (!csvText) {
+    return new Response(JSON.stringify({ error: "csvText é obrigatório" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const overrides = fieldOverrides && typeof fieldOverrides === "object" ? fieldOverrides : null;
+  const firstLine = csvText.split(/\r?\n/)[0]?.replace(/^\uFEFF/, "") || "";
+  const sep = detectSeparator(firstLine);
+  const rows = parseCSV(csvText, sep);
+  const headers = firstLine.split(sep).map((h: string) => h.replace(/^"|"$/g, "").trim());
+
+  // Count occurrences per contact
+  const contactCounts = new Map<string, number>();
+  let noContact = 0;
+  for (const row of rows) {
+    const email = normEmail(getFieldValue(row, "email", overrides, headers));
+    const phone = normPhone(getFieldValue(row, "telefone", overrides, headers));
+    if (!email && !phone) { noContact++; continue; }
+    if (email && !email.includes("@")) { noContact++; continue; }
+    const contactKey = phone || email;
+    contactCounts.set(contactKey, (contactCounts.get(contactKey) || 0) + 1);
+  }
+
+  const { emailIndex, phoneIndex } = await buildLeadIndex(supabase, workspaceId);
+
+  let updated = 0;
+  for (const [contactKey, csvCount] of contactCounts.entries()) {
+    const leadId = emailIndex[contactKey] || phoneIndex[contactKey] || null;
+    if (!leadId) continue;
+    await supabase
+      .from("leads")
+      .update({
+        signup_count: csvCount,
+        last_signup_at: csvCount > 1 ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", leadId);
+    if (csvCount > 1) updated++;
+  }
+
+  console.log(`[import-leads:recalculate_signups] total_rows=${rows.length} unique_contacts=${contactCounts.size} updated=${updated} noContact=${noContact}`);
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      total_rows: rows.length,
+      unique_contacts: contactCounts.size,
+      duplicates: rows.length - contactCounts.size - noContact,
+      leads_with_multi_signup: updated,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
 // ─── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -817,6 +885,10 @@ Deno.serve(async (req) => {
 
     if (mode === "backfill") {
       return await handleBackfill(supabase, workspaceId, body);
+    }
+
+    if (mode === "recalculate_signups") {
+      return await handleRecalculateSignups(supabase, workspaceId, body);
     }
 
     return await handleFunnelImport(supabase, workspaceId, body);
