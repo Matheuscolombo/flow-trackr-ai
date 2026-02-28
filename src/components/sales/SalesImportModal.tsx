@@ -182,6 +182,7 @@ export function SalesImportModal({ open, onClose, existingLeads, onImport }: Sal
   const [result, setResult] = useState<ImportResult | null>(null);
   const [dragging, setDragging] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [processedLines, setProcessedLines] = useState(0);
   // Editable field overrides — initialized from auto-detection, user can change
   const [fieldOverrides, setFieldOverrides] = useState<Record<string, string | null>>({});
 
@@ -192,6 +193,7 @@ export function SalesImportModal({ open, onClose, existingLeads, onImport }: Sal
     setAnalysis(null);
     setResult(null);
     setBatchProgress({ current: 0, total: 0 });
+    setProcessedLines(0);
     setFieldOverrides({});
   };
 
@@ -243,6 +245,8 @@ export function SalesImportModal({ open, onClose, existingLeads, onImport }: Sal
     const { batches } = splitCSVIntoBatches(fileText);
     const total = batches.length;
     setBatchProgress({ current: 0, total });
+    setProcessedLines(0);
+    const totalLines = analysis?.validLines ?? 0;
 
     // Build clean overrides to send (only non-null entries)
     const cleanOverrides: Record<string, string> = {};
@@ -267,6 +271,7 @@ export function SalesImportModal({ open, onClose, existingLeads, onImport }: Sal
         if (error) {
           console.error(`[SalesImportModal] batch ${i + 1} error:`, error);
           accIgnored += BATCH_SIZE;
+          setProcessedLines(Math.min((i + 1) * BATCH_SIZE, totalLines));
           continue;
         }
         accEnriched += data.enriched ?? 0;
@@ -276,9 +281,11 @@ export function SalesImportModal({ open, onClose, existingLeads, onImport }: Sal
         accIgnored += (data.ignored ?? 0) + (data.duplicates ?? 0);
         accRevenue += data.total_revenue ?? 0;
         lastPlatform = data.platform ?? lastPlatform;
+        setProcessedLines(Math.min((i + 1) * BATCH_SIZE, totalLines));
       } catch (err) {
         console.error(`[SalesImportModal] batch ${i + 1} threw:`, err);
         accIgnored += BATCH_SIZE;
+        setProcessedLines(Math.min((i + 1) * BATCH_SIZE, totalLines));
       }
     }
 
@@ -445,23 +452,19 @@ export function SalesImportModal({ open, onClose, existingLeads, onImport }: Sal
           <div className="flex flex-col items-center justify-center py-12 gap-5">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
             <div className="text-center w-full px-4">
-              <p className="text-sm font-semibold text-foreground">
-                {batchProgress.total > 1
-                  ? `Processando lote ${batchProgress.current} de ${batchProgress.total}...`
-                  : "Cruzando leads..."}
+              <p className="text-sm font-semibold text-foreground">Processando vendas...</p>
+              <p className="text-lg font-bold tabular-nums text-foreground mt-2">
+                {processedLines.toLocaleString("pt-BR")} <span className="text-muted-foreground font-normal text-sm">de</span> {(analysis?.validLines ?? 0).toLocaleString("pt-BR")}
               </p>
-              <p className="text-xs text-muted-foreground mt-1">email → telefone → criação de fantasmas</p>
-              {batchProgress.total > 1 && (
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Lote {batchProgress.current} de {batchProgress.total}
+              </p>
+              {(analysis?.validLines ?? 0) > 0 && (
                 <div className="mt-3">
                   <Progress
-                    value={batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}
+                    value={(processedLines / (analysis?.validLines ?? 1)) * 100}
                     className="h-2"
                   />
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    {batchProgress.current * BATCH_SIZE > 0
-                      ? `~${Math.min(batchProgress.current * BATCH_SIZE, analysis?.validLines ?? 0).toLocaleString("pt-BR")} linhas processadas`
-                      : "Iniciando..."}
-                  </p>
                 </div>
               )}
             </div>
