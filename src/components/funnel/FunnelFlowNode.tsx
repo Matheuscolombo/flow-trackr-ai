@@ -23,7 +23,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
     // YouTube: extract video ID and use maxresdefault thumbnail
     const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|live\/|embed\/)|youtu\.be\/)([\w-]{11})/);
     if (ytMatch) return `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg`;
-    return `https://image.thum.io/get/width/480/crop/600/viewportWidth/390/viewportHeight/844/${url}`;
+    return `https://image.thum.io/get/width/260/crop/400/viewportWidth/390/viewportHeight/844/${url}`;
   };
   const effectiveThumb = thumbnailUrl || (pageUrl ? getAutoThumb(pageUrl) : null);
   const showThumbnail = isPage && effectiveThumb && !imgError;
