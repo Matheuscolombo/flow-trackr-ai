@@ -23,7 +23,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
     // YouTube: extract video ID and use maxresdefault thumbnail
     const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|live\/|embed\/)|youtu\.be\/)([\w-]{11})/);
     if (ytMatch) return `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg`;
-    return `https://image.thum.io/get/width/480/viewportWidth/390/viewportHeight/844/${url}`;
+    return `https://image.thum.io/get/width/480/crop/600/viewportWidth/390/viewportHeight/844/${url}`;
   };
   const effectiveThumb = thumbnailUrl || (pageUrl ? getAutoThumb(pageUrl) : null);
   const showThumbnail = isPage && effectiveThumb && !imgError;
@@ -40,14 +40,14 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
       >
         {/* Thumbnail area */}
         {showThumbnail ? (
-          <div className="w-full h-[160px] bg-muted/30 relative overflow-hidden">
+          <div className="w-full h-[200px] bg-muted/30 relative overflow-hidden">
             <img
               src={effectiveThumb!}
               alt={label}
               className="w-full h-full object-cover object-top"
               onError={() => setImgError(true)}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-card/40 to-transparent" />
           </div>
         ) : isPage ? (
           <div className="w-full h-[80px] bg-muted/20 flex items-center justify-center">
