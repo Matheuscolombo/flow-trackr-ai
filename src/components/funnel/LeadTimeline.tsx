@@ -553,13 +553,16 @@ function TimelineEvents({ lead, sales, realEvents, loadingEvents, loadingSales }
 
     // 3. Eventos reais do banco
     realEvents.forEach((ev) => {
+      const cfg = getEventConfig(ev.event_name);
+      const label = cfg.label !== ev.event_name ? cfg.label : ev.event_name;
       items.push({
         id: ev.id,
         type: "real",
         timestamp: ev.timestamp_event,
-        label: ev.event_name,
-        icon: getEventConfig(ev.event_name).icon,
-        dotColor: getEventConfig(ev.event_name).dot,
+        label,
+        detail: ev.event_name === "re_signup" ? "Cadastrou novamente neste funil" : undefined,
+        icon: cfg.icon,
+        dotColor: cfg.dot,
         realEvent: ev,
       });
     });
