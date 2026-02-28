@@ -822,18 +822,9 @@ async function handleFunnelImport(
   let eventsCreated = 0;
   const eventRows: Record<string, unknown>[] = [];
   for (const upd of allLeadUpdates) {
-    const lastTs = upd.timestamps.length > 1 ? upd.timestamps[upd.timestamps.length - 1] : null;
-    if (upd.isDuplicate && upd.count > 0) {
-      // For leads already in funnel (cross-batch duplicates): INCREMENT signup_count
-      // Use raw SQL to atomically increment
-      const incrementBy = upd.count - 1; // -1 because original signup already counted
-      if (incrementBy > 0) {
-        await supabase.rpc("increment_signup_count", { p_lead_id: upd.id });
-        // If more than 1 extra signup, call multiple times or use direct SQL
-        for (let extra = 1; extra < incrementBy; extra++) {
-          await supabase.rpc("increment_signup_count", { p_lead_id: upd.id });
-        }
-      }
+    if (upd.isDuplicate) {
+      // signup_count increment is handled below in the event creation block
+      const lastTs = upd.timestamps.length > 0 ? upd.timestamps[upd.timestamps.length - 1] : null;
       if (lastTs) {
         await supabase
           .from("leads")
@@ -842,6 +833,7 @@ async function handleFunnelImport(
       }
     } else {
       // For new leads: SET signup_count directly
+      const lastTs = upd.timestamps.length > 1 ? upd.timestamps[upd.timestamps.length - 1] : null;
       await supabase
         .from("leads")
         .update({
@@ -852,8 +844,28 @@ async function handleFunnelImport(
         .eq("id", upd.id);
     }
 
-    // Create lead_events for each re-signup (skip the first one = original signup)
-    if (upd.count > 1) {
+    // Create lead_events for re-signups
+    if (upd.isDuplicate) {
+      // For cross-batch duplicates: ALL timestamps are re-signups (original was in previous batch)
+      for (let i = 0; i < upd.timestamps.length; i++) {
+        const ts = upd.timestamps[i];
+        const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+        eventRows.push({
+          lead_id: upd.id,
+          funnel_id: funnelId,
+          event_name: "re_signup",
+          source: "import",
+          timestamp_event: isoTs,
+          payload_raw: { signup_number: i + 1, cross_batch: true },
+          idempotency_key: `re_signup_${upd.id}_${isoTs}`,
+        });
+      }
+      // Also increment signup_count for each timestamp in this batch
+      for (let i = 0; i < upd.timestamps.length; i++) {
+        await supabase.rpc("increment_signup_count", { p_lead_id: upd.id });
+      }
+    } else if (upd.count > 1) {
+      // For same-batch re-signups: skip the first one (original signup)
       for (let i = 1; i < upd.timestamps.length; i++) {
         const ts = upd.timestamps[i];
         const isoTs = new Date(ts.replace(" ", "T")).toISOString();
