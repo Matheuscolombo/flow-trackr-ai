@@ -23,7 +23,7 @@ import type { FunnelStage, StageTransitionRule } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone, Trash2 } from "lucide-react";
+import { Plus, Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone, Trash2, MessageCircle } from "lucide-react";
 
 interface StageCount {
   stage_id: string;
@@ -58,6 +58,7 @@ const sourceOptions: { type: TrafficIconType; label: string; icon: React.Element
   { type: "ads", label: "Ads", icon: Target },
   { type: "organic", label: "Orgânico", icon: Globe },
   { type: "tiktok", label: "TikTok", icon: Smartphone },
+  { type: "whatsapp", label: "WhatsApp", icon: MessageCircle },
   { type: "custom", label: "Outro", icon: Megaphone },
 ];
 

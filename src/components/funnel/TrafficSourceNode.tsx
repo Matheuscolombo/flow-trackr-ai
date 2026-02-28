@@ -1,8 +1,8 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone } from "lucide-react";
+import { Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone, MessageCircle } from "lucide-react";
 
-export type TrafficIconType = "instagram" | "facebook" | "youtube" | "email" | "ads" | "organic" | "tiktok" | "custom";
+export type TrafficIconType = "instagram" | "facebook" | "youtube" | "email" | "ads" | "organic" | "tiktok" | "whatsapp" | "custom";
 
 export interface TrafficSourceNodeData {
   label: string;
@@ -19,6 +19,7 @@ const iconMap: Record<TrafficIconType, { icon: React.ElementType; color: string 
   ads: { icon: Target, color: "#F59E0B" },
   organic: { icon: Globe, color: "#6366F1" },
   tiktok: { icon: Smartphone, color: "#000000" },
+  whatsapp: { icon: MessageCircle, color: "#25D366" },
   custom: { icon: Megaphone, color: "#8B5CF6" },
 };
 
