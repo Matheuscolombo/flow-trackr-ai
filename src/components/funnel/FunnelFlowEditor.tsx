@@ -6,12 +6,15 @@ import {
   type Node,
   type Edge,
   type Connection,
+  type Viewport,
   useNodesState,
   useEdgesState,
   type NodeChange,
   BackgroundVariant,
   MarkerType,
   addEdge,
+  useReactFlow,
+  ReactFlowProvider,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import FunnelFlowNode, { type FlowNodeData } from "./FunnelFlowNode";
@@ -66,11 +69,26 @@ function buildAutoLayout(stages: FunnelStage[]): { x: number; y: number }[] {
   }));
 }
 
-export function FunnelFlowEditor({ stages, rules, stageCounts, funnelId }: Props) {
+function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewportDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sourceNodes, setSourceNodes] = useState<SourceNode[]>([]);
   const [popoverOpen, setPopoverOpen] = useState(false);
 
+  const viewportKey = `funnel-viewport-${funnelId}`;
+  const savedViewport = useMemo<Viewport | null>(() => {
+    try {
+      const raw = localStorage.getItem(viewportKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }, [viewportKey]);
+
+  const onMoveEnd = useCallback((_: any, viewport: Viewport) => {
+    if (viewportDebounceRef.current) clearTimeout(viewportDebounceRef.current);
+    viewportDebounceRef.current = setTimeout(() => {
+      localStorage.setItem(viewportKey, JSON.stringify(viewport));
+    }, 300);
+  }, [viewportKey]);
   // Load source nodes
   useEffect(() => {
     supabase
@@ -325,12 +343,13 @@ export function FunnelFlowEditor({ stages, rules, stageCounts, funnelId }: Props
           onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onMoveEnd={onMoveEnd}
           nodeTypes={nodeTypes}
-          fitView
+          fitView={!savedViewport}
           fitViewOptions={{ padding: 0.15, minZoom: 0.6, maxZoom: 1.2 }}
+          defaultViewport={savedViewport ?? { x: 0, y: 0, zoom: 0.85 }}
           minZoom={0.3}
           maxZoom={2}
-          defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
           proOptions={{ hideAttribution: true }}
           className="bg-background"
         >
@@ -339,5 +358,13 @@ export function FunnelFlowEditor({ stages, rules, stageCounts, funnelId }: Props
         </ReactFlow>
       </div>
     </div>
+  );
+}
+
+export function FunnelFlowEditor(props: Props) {
+  return (
+    <ReactFlowProvider>
+      <FunnelFlowEditorInner {...props} />
+    </ReactFlowProvider>
   );
 }
