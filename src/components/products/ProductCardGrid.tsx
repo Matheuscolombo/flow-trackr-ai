@@ -158,7 +158,6 @@ function ProductCard({
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <DollarSign className="w-3.5 h-3.5 text-[hsl(var(--sentinel-success))]" />
             <span className="text-sm tabular-nums font-semibold text-[hsl(var(--sentinel-success))]">
               {stats ? `R$ ${stats.total_revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}
             </span>
