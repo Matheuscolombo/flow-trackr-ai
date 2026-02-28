@@ -62,6 +62,35 @@ function getFieldValue(row: Record<string, string>, fieldKey: string, overrides:
   return header ? (row[header] || "") : "";
 }
 
+// ─── Shared: paginated lead index builder ────────────────────────────────────
+
+async function buildLeadIndex(supabase: ReturnType<typeof createClient>, workspaceId: string) {
+  const emailIndex: Record<string, string> = {};
+  const phoneIndex: Record<string, string> = {};
+  const PAGE = 1000;
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data } = await supabase
+      .from("leads")
+      .select("id, email, phone")
+      .eq("workspace_id", workspaceId)
+      .range(offset, offset + PAGE - 1);
+
+    const rows = data || [];
+    rows.forEach((l: { id: string; email: string | null; phone: string | null }) => {
+      if (l.email) emailIndex[normEmail(l.email)] = l.id;
+      if (l.phone) phoneIndex[normPhone(l.phone)] = l.id;
+    });
+
+    hasMore = rows.length === PAGE;
+    offset += PAGE;
+  }
+
+  return { emailIndex, phoneIndex };
+}
+
 // ─── Shared: authenticate + get workspace ────────────────────────────────────
 
 async function authenticateAndGetWorkspace(req: Request) {
@@ -191,18 +220,7 @@ async function handleBackfill(
     });
   }
 
-  // Build existing contacts index
-  const { data: existingLeads } = await supabase
-    .from("leads")
-    .select("id, email, phone")
-    .eq("workspace_id", workspaceId);
-
-  const emailIndex: Record<string, string> = {};
-  const phoneIndex: Record<string, string> = {};
-  (existingLeads || []).forEach((l: { id: string; email: string | null; phone: string | null }) => {
-    if (l.email) emailIndex[normEmail(l.email)] = l.id;
-    if (l.phone) phoneIndex[normPhone(l.phone)] = l.id;
-  });
+  const { emailIndex, phoneIndex } = await buildLeadIndex(supabase, workspaceId);
 
   // Check who is already in the funnel
   const { data: existingPositions } = await supabase
@@ -453,18 +471,7 @@ async function handleEventOnly(
     });
   }
 
-  // Build existing contacts index
-  const { data: existingLeads } = await supabase
-    .from("leads")
-    .select("id, email, phone")
-    .eq("workspace_id", workspaceId);
-
-  const emailIndex: Record<string, string> = {};
-  const phoneIndex: Record<string, string> = {};
-  (existingLeads || []).forEach((l: { id: string; email: string | null; phone: string | null }) => {
-    if (l.email) emailIndex[normEmail(l.email)] = l.id;
-    if (l.phone) phoneIndex[normPhone(l.phone)] = l.id;
-  });
+  const { emailIndex, phoneIndex } = await buildLeadIndex(supabase, workspaceId);
 
   // If campaignId provided, get funnels in that campaign
   let campaignFunnelIds: Set<string> | null = null;
@@ -628,18 +635,7 @@ async function handleFunnelImport(
     });
   }
 
-  // Build existing contacts index
-  const { data: existingLeads } = await supabase
-    .from("leads")
-    .select("id, email, phone")
-    .eq("workspace_id", workspaceId);
-
-  const emailIndex: Record<string, string> = {};
-  const phoneIndex: Record<string, string> = {};
-  (existingLeads || []).forEach((l: { id: string; email: string | null; phone: string | null }) => {
-    if (l.email) emailIndex[normEmail(l.email)] = l.id;
-    if (l.phone) phoneIndex[normPhone(l.phone)] = l.id;
-  });
+  const { emailIndex, phoneIndex } = await buildLeadIndex(supabase, workspaceId);
 
   const { data: existingPositions } = await supabase
     .from("lead_funnel_stages")
