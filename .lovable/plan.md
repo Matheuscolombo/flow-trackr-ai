@@ -1,34 +1,31 @@
 
 
-## Plano: Registrar TODOS os cadastros como eventos na timeline
+## Problema
 
-### Problema atual
+Os eventos `signup` e `re_signup` nao estao sendo persistidos no banco porque a tabela `lead_events` **nao tem indice unico na coluna `idempotency_key`**. O codigo usa `.upsert(..., { onConflict: "idempotency_key" })`, que exige esse indice para funcionar. Sem ele, o upsert falha silenciosamente e nenhum evento eh salvo.
 
-- O primeiro cadastro no funil nao gera nenhum `lead_event` -- so aparece o sintetico "Lead cadastrado" com `lead.created_at`, que pode ser de OUTRO funil
-- Apenas re-signups (2o+) geram eventos `re_signup`
-- Resultado: lead com 2 cadastros neste funil mostra apenas 1 evento de re_signup, e o "Lead cadastrado" aponta para a data global, nao para este funil
+## Evidencia
 
-### Mudancas
+- `pg_indexes` para `lead_events` mostra apenas: `pkey(id)`, `idx_lead_events_funnel`, `idx_lead_events_lead`
+- Nenhum indice em `idempotency_key`
 
-#### 1. Edge function `import-leads/index.ts`
-- Para **novos leads no funil** (nao duplicates, nao cross-batch): criar um evento `signup` para o PRIMEIRO timestamp tambem, nao so os re-signups
-- Manter os `re_signup` para os subsequentes
-- Para **cross-batch duplicates**: ja cria eventos para todos os timestamps -- manter como esta
-- Resultado: cada cadastro neste funil tera um evento real no banco, com a data correta do CSV
+## Plano
 
-#### 2. Timeline `LeadTimeline.tsx`
-- Adicionar config para evento `signup` no `eventConfig`: icon UserPlus, dot azul, label "Cadastro no funil"
-- O `re_signup` ja esta configurado com label "Re-cadastro" -- manter
-- No `detail` do `signup`, mostrar o nome do funil (disponivel no `payload_raw`)
+### 1. Criar indice unico na coluna `idempotency_key`
 
-#### 3. Evento sintetico "Lead cadastrado"
-- Manter como esta -- ele marca a data de criacao global do lead no sistema
-- Os eventos `signup` e `re_signup` mostram os cadastros especificos NESTE funil
+Migracao SQL:
 
-### Resumo tecnico
+```sql
+CREATE UNIQUE INDEX idx_lead_events_idempotency_key 
+ON public.lead_events (idempotency_key) 
+WHERE idempotency_key IS NOT NULL;
+```
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/import-leads/index.ts` | Criar evento `signup` para o 1o cadastro no funil (alem dos `re_signup` ja existentes) |
-| `src/components/funnel/LeadTimeline.tsx` | Adicionar `signup` ao `eventConfig` com label "Cadastro no funil" |
+Isso eh um indice parcial — so aplica para registros com `idempotency_key` preenchido (os inserts sem key continuam funcionando normalmente).
+
+### 2. Reimportar
+
+Apos a migracao, o usuario reimporta o CSV e os eventos `signup` / `re_signup` serao persistidos corretamente e aparecerao na timeline.
+
+Nenhuma alteracao de codigo necessaria — o Edge Function e o LeadTimeline ja estao corretos.
 
