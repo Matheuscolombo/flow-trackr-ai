@@ -41,7 +41,58 @@ const SYNONYMS: Record<string, string[]> = {
   nome: ["nome", "name", "nome completo", "full_name", "customer_name", "nome do lead"],
   email: ["email", "e-mail", "e-mail do lead", "customer_email"],
   telefone: ["telefone", "phone", "fone", "celular", "whatsapp", "mobile"],
+  data: ["data de conversão", "data", "date", "created_at", "data_cadastro", "converted_at", "timestamp"],
 };
+
+// Truncate timestamp to the minute for dedup (same minute = same signup)
+function truncateToMinute(dateStr: string): string {
+  if (!dateStr) return "";
+  // Handle common formats: "2026-02-18 21:41:44" or ISO
+  const d = new Date(dateStr.replace(" ", "T"));
+  if (isNaN(d.getTime())) return dateStr.trim(); // fallback to raw string
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+
+// Count distinct signups per contact: dedup by phone+minute, return count and distinct timestamps
+function countDistinctSignups(
+  rows: Record<string, string>[],
+  overrides: Record<string, string> | null,
+  headers: string[]
+): { contactSignups: Map<string, { count: number; timestamps: string[] }>; noContact: number } {
+  // Group rows by contact, collecting unique timestamps
+  const contactTimestamps = new Map<string, Set<string>>();
+  const contactRawTimestamps = new Map<string, Map<string, string>>(); // minute → raw timestamp
+  let noContact = 0;
+
+  for (const row of rows) {
+    const email = normEmail(getFieldValue(row, "email", overrides, headers));
+    const phone = normPhone(getFieldValue(row, "telefone", overrides, headers));
+    if (!email && !phone) { noContact++; continue; }
+    if (email && !email.includes("@")) { noContact++; continue; }
+    const contactKey = phone || email;
+
+    const rawDate = getFieldValue(row, "data", overrides, headers);
+    const minuteKey = truncateToMinute(rawDate);
+
+    if (!contactTimestamps.has(contactKey)) {
+      contactTimestamps.set(contactKey, new Set());
+      contactRawTimestamps.set(contactKey, new Map());
+    }
+    contactTimestamps.get(contactKey)!.add(minuteKey);
+    if (!contactRawTimestamps.get(contactKey)!.has(minuteKey)) {
+      contactRawTimestamps.get(contactKey)!.set(minuteKey, rawDate);
+    }
+  }
+
+  const contactSignups = new Map<string, { count: number; timestamps: string[] }>();
+  for (const [key, minutes] of contactTimestamps.entries()) {
+    const rawMap = contactRawTimestamps.get(key)!;
+    const timestamps = Array.from(minutes).map((m) => rawMap.get(m) || m).sort();
+    contactSignups.set(key, { count: minutes.size, timestamps });
+  }
+
+  return { contactSignups, noContact };
+}
 
 function findField(headers: string[], fieldKey: string): string | null {
   const synonyms = SYNONYMS[fieldKey] || [];
@@ -644,16 +695,8 @@ async function handleFunnelImport(
 
   const existingInFunnel = new Set((existingPositions || []).map((p: { lead_id: string }) => p.lead_id));
 
-  // First pass: count occurrences per contact key in the CSV
-  const contactCounts = new Map<string, number>();
-  for (const row of rows) {
-    const email = normEmail(getFieldValue(row, "email", overrides, headers));
-    const phone = normPhone(getFieldValue(row, "telefone", overrides, headers));
-    if (!email && !phone) continue;
-    if (email && !email.includes("@")) continue;
-    const contactKey = phone || email;
-    contactCounts.set(contactKey, (contactCounts.get(contactKey) || 0) + 1);
-  }
+  // Smart first pass: count distinct signups per contact (dedup by phone+minute)
+  const { contactSignups, noContact: noContactFirstPass } = countDistinctSignups(rows, overrides, headers);
 
   let imported = 0;
   let duplicates = 0;
@@ -663,8 +706,7 @@ async function handleFunnelImport(
   const tagRows: Record<string, unknown>[] = [];
   const seenContacts = new Set<string>();
   const duplicateLeadIds: string[] = [];
-  // Map contactKey → signup_count from CSV (for leads that get created or need update)
-  const signupCountByContact = new Map<string, number>();
+  const signupCountByContact = new Map<string, { count: number; timestamps: string[] }>();
 
   for (const row of rows) {
     const email = normEmail(getFieldValue(row, "email", overrides, headers));
@@ -678,8 +720,8 @@ async function handleFunnelImport(
     if (seenContacts.has(contactKey)) { duplicates++; continue; }
     seenContacts.add(contactKey);
 
-    const csvCount = contactCounts.get(contactKey) || 1;
-    signupCountByContact.set(contactKey, csvCount);
+    const signupData = contactSignups.get(contactKey) || { count: 1, timestamps: [] };
+    signupCountByContact.set(contactKey, signupData);
 
     let leadId = (email && emailIndex[email]) || (phone && phoneIndex[phone]) || null;
 
@@ -698,7 +740,7 @@ async function handleFunnelImport(
         source: "import",
         imported_at: new Date().toISOString(),
         metadata: { imported: true },
-        signup_count: csvCount,
+        signup_count: signupData.count,
       });
     }
     imported++;
@@ -766,35 +808,63 @@ async function handleFunnelImport(
     }
   }
 
-  // Update signup_count for ALL leads that had CSV duplicates (not just funnel-duplicates)
-  // For existing leads already in DB: update signup_count to reflect CSV occurrences
-  const allLeadUpdates: { id: string; count: number }[] = [];
-  for (const [contactKey, csvCount] of signupCountByContact.entries()) {
-    if (csvCount <= 1) continue;
+  // Update signup_count and create lead_events for re-signups
+  const allLeadUpdates: { id: string; count: number; timestamps: string[] }[] = [];
+  for (const [contactKey, signupData] of signupCountByContact.entries()) {
     const leadId = (emailIndex[contactKey]) || (phoneIndex[contactKey]) || null;
-    if (leadId) {
-      allLeadUpdates.push({ id: leadId, count: csvCount });
-    }
+    if (!leadId) continue;
+    allLeadUpdates.push({ id: leadId, count: signupData.count, timestamps: signupData.timestamps });
   }
-  // Also increment for leads that were already in funnel (duplicateLeadIds)
+  // Also handle leads already in funnel that weren't in signupCountByContact
   const uniqueDuplicateIds = [...new Set(duplicateLeadIds)];
-  for (const lid of uniqueDuplicateIds) {
-    if (!allLeadUpdates.some((u) => u.id === lid)) {
-      allLeadUpdates.push({ id: lid, count: 1 }); // at least 1 extra signup
-    }
-  }
-  // Batch update signup_count
+
+  let eventsCreated = 0;
+  const eventRows: Record<string, unknown>[] = [];
   for (const upd of allLeadUpdates) {
+    // Update signup_count
+    const lastTs = upd.timestamps.length > 1 ? upd.timestamps[upd.timestamps.length - 1] : null;
     await supabase
       .from("leads")
-      .update({ signup_count: upd.count, last_signup_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .update({
+        signup_count: upd.count,
+        last_signup_at: lastTs ? new Date(lastTs.replace(" ", "T")).toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", upd.id);
+
+    // Create lead_events for each re-signup (skip the first one = original signup)
+    if (upd.count > 1) {
+      for (let i = 1; i < upd.timestamps.length; i++) {
+        const ts = upd.timestamps[i];
+        const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+        eventRows.push({
+          lead_id: upd.id,
+          funnel_id: funnelId,
+          event_name: "re_signup",
+          source: "import",
+          timestamp_event: isoTs,
+          payload_raw: { signup_number: i + 1, total_signups: upd.count },
+          idempotency_key: `re_signup_${upd.id}_${isoTs}`,
+        });
+      }
+    }
   }
 
-  console.log(`[import-leads:funnel] imported=${imported} duplicates=${duplicates} duplicatesUpdated=${uniqueDuplicateIds.length} noContact=${noContact}`);
+  // Batch insert lead_events
+  if (eventRows.length > 0) {
+    for (let i = 0; i < eventRows.length; i += CHUNK) {
+      const { data } = await supabase
+        .from("lead_events")
+        .upsert(eventRows.slice(i, i + CHUNK), { onConflict: "idempotency_key", ignoreDuplicates: true })
+        .select("id");
+      eventsCreated += (data || []).length;
+    }
+  }
+
+  console.log(`[import-leads:funnel] imported=${imported} duplicates=${duplicates} signupEventsCreated=${eventsCreated} noContact=${noContact}`);
 
   return new Response(
-    JSON.stringify({ ok: true, imported, duplicates, duplicates_updated: uniqueDuplicateIds.length, no_contact: noContact }),
+    JSON.stringify({ ok: true, imported, duplicates, signup_events_created: eventsCreated, no_contact: noContact }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
 }
@@ -807,9 +877,10 @@ async function handleRecalculateSignups(
   workspaceId: string,
   body: Record<string, unknown>
 ) {
-  const { csvText, fieldOverrides } = body as {
+  const { csvText, fieldOverrides, funnelId } = body as {
     csvText: string;
     fieldOverrides?: Record<string, string>;
+    funnelId?: string;
   };
 
   if (!csvText) {
@@ -824,44 +895,70 @@ async function handleRecalculateSignups(
   const rows = parseCSV(csvText, sep);
   const headers = firstLine.split(sep).map((h: string) => h.replace(/^"|"$/g, "").trim());
 
-  // Count occurrences per contact
-  const contactCounts = new Map<string, number>();
-  let noContact = 0;
-  for (const row of rows) {
-    const email = normEmail(getFieldValue(row, "email", overrides, headers));
-    const phone = normPhone(getFieldValue(row, "telefone", overrides, headers));
-    if (!email && !phone) { noContact++; continue; }
-    if (email && !email.includes("@")) { noContact++; continue; }
-    const contactKey = phone || email;
-    contactCounts.set(contactKey, (contactCounts.get(contactKey) || 0) + 1);
-  }
+  // Smart dedup: count distinct signups per contact (by phone+minute)
+  const { contactSignups, noContact } = countDistinctSignups(rows, overrides, headers);
 
   const { emailIndex, phoneIndex } = await buildLeadIndex(supabase, workspaceId);
 
   let updated = 0;
-  for (const [contactKey, csvCount] of contactCounts.entries()) {
+  let eventsCreated = 0;
+  const CHUNK = 300;
+  const eventRows: Record<string, unknown>[] = [];
+
+  for (const [contactKey, signupData] of contactSignups.entries()) {
     const leadId = emailIndex[contactKey] || phoneIndex[contactKey] || null;
     if (!leadId) continue;
+
+    const lastTs = signupData.timestamps.length > 1 ? signupData.timestamps[signupData.timestamps.length - 1] : null;
     await supabase
       .from("leads")
       .update({
-        signup_count: csvCount,
-        last_signup_at: csvCount > 1 ? new Date().toISOString() : null,
+        signup_count: signupData.count,
+        last_signup_at: lastTs ? new Date(lastTs.replace(" ", "T")).toISOString() : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", leadId);
-    if (csvCount > 1) updated++;
+    if (signupData.count > 1) updated++;
+
+    // Create lead_events for each re-signup (skip first = original signup)
+    if (signupData.count > 1 && funnelId) {
+      for (let i = 1; i < signupData.timestamps.length; i++) {
+        const ts = signupData.timestamps[i];
+        const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+        eventRows.push({
+          lead_id: leadId,
+          funnel_id: funnelId,
+          event_name: "re_signup",
+          source: "import",
+          timestamp_event: isoTs,
+          payload_raw: { signup_number: i + 1, total_signups: signupData.count },
+          idempotency_key: `re_signup_${leadId}_${isoTs}`,
+        });
+      }
+    }
   }
 
-  console.log(`[import-leads:recalculate_signups] total_rows=${rows.length} unique_contacts=${contactCounts.size} updated=${updated} noContact=${noContact}`);
+  // Batch insert lead_events
+  if (eventRows.length > 0) {
+    for (let i = 0; i < eventRows.length; i += CHUNK) {
+      const { data } = await supabase
+        .from("lead_events")
+        .upsert(eventRows.slice(i, i + CHUNK), { onConflict: "idempotency_key", ignoreDuplicates: true })
+        .select("id");
+      eventsCreated += (data || []).length;
+    }
+  }
+
+  console.log(`[import-leads:recalculate_signups] total_rows=${rows.length} unique=${contactSignups.size} updated=${updated} events=${eventsCreated} noContact=${noContact}`);
 
   return new Response(
     JSON.stringify({
       ok: true,
       total_rows: rows.length,
-      unique_contacts: contactCounts.size,
-      duplicates: rows.length - contactCounts.size - noContact,
+      unique_contacts: contactSignups.size,
+      duplicate_signups: Array.from(contactSignups.values()).reduce((s, v) => s + v.count - 1, 0),
       leads_with_multi_signup: updated,
+      events_created: eventsCreated,
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );

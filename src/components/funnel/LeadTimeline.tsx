@@ -70,6 +70,7 @@ const eventConfig: Record<string, { icon: React.ElementType; dot: string; label:
   base_importado:       { icon: Users,         dot: "bg-muted-foreground",     label: "Importado" },
   pagina_cadastro:      { icon: CheckCircle2,  dot: "bg-blue-400",             label: "Cadastro" },
   cadastro_repetido:    { icon: UserPlus,       dot: "bg-yellow-400",           label: "Cadastro repetido" },
+  re_signup:            { icon: UserPlus,       dot: "bg-yellow-400",           label: "Re-cadastro" },
   grupo_confirmado:     { icon: Users,         dot: "bg-violet-400",           label: "Grupo" },
   mensagem_api_enviada: { icon: MessageSquare, dot: "bg-cyan-400",             label: "Mensagem" },
   live_assistida:       { icon: Play,          dot: "bg-primary",              label: "Live" },
