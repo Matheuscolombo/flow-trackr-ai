@@ -18,8 +18,14 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
   const isPage = !!pageUrl;
   const [imgError, setImgError] = useState(false);
 
-  // Auto-generate thumbnail from page_url if no custom thumbnail is set
-  const effectiveThumb = thumbnailUrl || (pageUrl ? `https://image.thum.io/get/width/480/viewportWidth/390/viewportHeight/844/${pageUrl}` : null);
+  // Auto-generate thumbnail: YouTube → native thumb, otherwise → thum.io mobile
+  const getAutoThumb = (url: string): string => {
+    // YouTube: extract video ID and use maxresdefault thumbnail
+    const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|live\/|embed\/)|youtu\.be\/)([\w-]{11})/);
+    if (ytMatch) return `https://img.youtube.com/vi/${ytMatch[1]}/maxresdefault.jpg`;
+    return `https://image.thum.io/get/width/480/viewportWidth/390/viewportHeight/844/${url}`;
+  };
+  const effectiveThumb = thumbnailUrl || (pageUrl ? getAutoThumb(pageUrl) : null);
   const showThumbnail = isPage && effectiveThumb && !imgError;
 
   return (
