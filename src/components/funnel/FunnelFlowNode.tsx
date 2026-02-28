@@ -40,14 +40,14 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
       >
         {/* Thumbnail area */}
         {showThumbnail ? (
-          <div className="w-full h-[200px] bg-muted/30 relative overflow-hidden">
+          <div className="w-full h-[200px] bg-muted/10 relative overflow-hidden flex items-start justify-center">
             <img
               src={effectiveThumb!}
               alt={label}
-              className="w-full h-full object-cover object-top"
+              className="w-full h-auto"
               onError={() => setImgError(true)}
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-card/40 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-card/50 via-transparent to-transparent" />
           </div>
         ) : isPage ? (
           <div className="w-full h-[80px] bg-muted/20 flex items-center justify-center">
