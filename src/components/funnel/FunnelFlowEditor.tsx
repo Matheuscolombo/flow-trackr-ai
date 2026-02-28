@@ -25,7 +25,8 @@ import type { FunnelStage, StageTransitionRule } from "@/types";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Plus, Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone, Trash2, MessageCircle, LayoutGrid } from "lucide-react";
+import { Plus, Instagram, Facebook, Youtube, Mail, Target, Globe, Smartphone, Megaphone, Trash2, MessageCircle, LayoutGrid, Save } from "lucide-react";
+import { toast } from "sonner";
 
 interface StageCount {
   stage_id: string;
@@ -257,16 +258,22 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
       // Persist edge to funnel_edges table
       supabase
         .from("funnel_edges" as any)
-        .upsert({
+        .insert({
           funnel_id: funnelId,
           source_node_id: connection.source,
           target_node_id: connection.target,
-        } as any, { onConflict: "funnel_id,source_node_id,target_node_id" })
+        } as any)
         .select()
         .single()
-        .then(({ data }) => {
+        .then(({ data, error }) => {
+          if (error) {
+            console.error("Error saving edge:", error);
+            toast.error("Erro ao salvar conexão");
+            return;
+          }
           if (data) {
-            setCustomEdges((prev) => [...prev.filter((e) => !(e.source_node_id === connection.source && e.target_node_id === connection.target)), data as any as CustomEdge]);
+            setCustomEdges((prev) => [...prev, data as any as CustomEdge]);
+            toast.success("Conexão salva");
           }
         });
 
@@ -403,6 +410,16 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
     setSourceNodes((prev) => prev.filter((s) => s.id !== nodeId));
   };
 
+  const saveAll = useCallback(async () => {
+    try {
+      // Save all node positions
+      savePositions(nodes);
+      toast.success("Posições salvas com sucesso");
+    } catch {
+      toast.error("Erro ao salvar");
+    }
+  }, [nodes, savePositions]);
+
   return (
     <div className="space-y-3">
       {/* Toolbar */}
@@ -410,6 +427,10 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
         <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={autoOrganize}>
           <LayoutGrid className="w-3.5 h-3.5" />
           Auto-organizar
+        </Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={saveAll}>
+          <Save className="w-3.5 h-3.5" />
+          Salvar
         </Button>
         <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
           <PopoverTrigger asChild>
