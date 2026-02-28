@@ -1,4 +1,4 @@
-import { Clock, ExternalLink, GitBranch } from "lucide-react";
+import { Clock, ExternalLink, GitBranch, UserPlus } from "lucide-react";
 import type { Lead } from "@/types";
 import { Badge } from "@/components/ui/badge";
 
@@ -93,6 +93,14 @@ export function LeadCard({ lead, funnelId, onClick }: LeadCardProps) {
               ×{lead.purchase_count}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Indicador de cadastros repetidos */}
+      {(lead.signup_count ?? 1) > 1 && (
+        <div className="mt-1.5 flex items-center gap-1 text-[9px] text-yellow-400">
+          <UserPlus className="w-2.5 h-2.5" />
+          <span className="font-semibold">{lead.signup_count}x cadastros</span>
         </div>
       )}
 

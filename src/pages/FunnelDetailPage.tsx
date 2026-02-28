@@ -45,7 +45,7 @@ interface StageCount {
 }
 
 function adaptLeadForKanban(
-  row: { stage_id: string; entered_at: string; source: string; leads: { id: string; name: string | null; email: string | null; phone: string | null; utm_source: string | null; total_revenue: number; purchase_count: number; is_ghost: boolean; created_at: string; source: string } },
+  row: { stage_id: string; entered_at: string; source: string; leads: { id: string; name: string | null; email: string | null; phone: string | null; utm_source: string | null; total_revenue: number; purchase_count: number; is_ghost: boolean; created_at: string; source: string; signup_count: number } },
   stage: FunnelStage,
   funnelId: string
 ): Lead {
@@ -100,6 +100,7 @@ function adaptLeadForKanban(
     current_stage_name: stage.name,
     total_revenue: row.leads.total_revenue,
     purchase_count: row.leads.purchase_count,
+    signup_count: row.leads.signup_count,
   };
 }
 
@@ -156,7 +157,7 @@ const FunnelDetailPage = () => {
       const escapedQ = `%${q}%`;
       const { data: lfsRows } = await supabase
         .from("lead_funnel_stages")
-        .select("stage_id, entered_at, source, leads!inner(id, name, email, phone, utm_source, total_revenue, purchase_count, is_ghost, created_at, imported_at, source)")
+        .select("stage_id, entered_at, source, leads!inner(id, name, email, phone, utm_source, total_revenue, purchase_count, signup_count, is_ghost, created_at, imported_at, source)")
         .eq("funnel_id", id)
         .or(`name.ilike.${escapedQ},email.ilike.${escapedQ},phone.ilike.${escapedQ}`, { referencedTable: "leads" })
         .limit(50);
@@ -245,7 +246,7 @@ const FunnelDetailPage = () => {
             stageIds.map(async (stageId) => {
               const { data: lfsRows } = await supabase
                 .from("lead_funnel_stages")
-                .select("stage_id, entered_at, source, leads(id, name, email, phone, utm_source, total_revenue, purchase_count, is_ghost, created_at, imported_at, source)")
+                .select("stage_id, entered_at, source, leads(id, name, email, phone, utm_source, total_revenue, purchase_count, signup_count, is_ghost, created_at, imported_at, source)")
                 .eq("funnel_id", id)
                 .eq("stage_id", stageId)
                 .order("entered_at", { ascending: false })
