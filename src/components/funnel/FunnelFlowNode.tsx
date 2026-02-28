@@ -40,11 +40,11 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
       >
         {/* Thumbnail area */}
         {showThumbnail ? (
-          <div className="w-full max-h-[280px] bg-muted/10 relative overflow-hidden flex items-start justify-center">
+          <div className="w-full aspect-[9/16] max-h-[300px] bg-black/20 relative overflow-hidden">
             <img
               src={effectiveThumb!}
               alt={label}
-              className="w-full h-auto"
+              className="w-full h-full object-contain object-top"
               onError={() => setImgError(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-card/50 via-transparent to-transparent" />
