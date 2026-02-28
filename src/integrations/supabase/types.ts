@@ -57,21 +57,27 @@ export type Database = {
           created_at: string
           funnel_id: string
           id: string
+          source_handle: string | null
           source_node_id: string
+          target_handle: string | null
           target_node_id: string
         }
         Insert: {
           created_at?: string
           funnel_id: string
           id?: string
+          source_handle?: string | null
           source_node_id: string
+          target_handle?: string | null
           target_node_id: string
         }
         Update: {
           created_at?: string
           funnel_id?: string
           id?: string
+          source_handle?: string | null
           source_node_id?: string
+          target_handle?: string | null
           target_node_id?: string
         }
         Relationships: [
