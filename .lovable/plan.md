@@ -1,31 +1,25 @@
 
 
-## Problema
+## Adicionar origem nos eventos da timeline
 
-Os eventos `signup` e `re_signup` nao estao sendo persistidos no banco porque a tabela `lead_events` **nao tem indice unico na coluna `idempotency_key`**. O codigo usa `.upsert(..., { onConflict: "idempotency_key" })`, que exige esse indice para funcionar. Sem ele, o upsert falha silenciosamente e nenhum evento eh salvo.
+### Problema
+Os eventos na timeline nao mostram a origem/source de cada evento. Quando o lead participa de varios funis (ex: "funil api", "funil hot"), nao da pra saber de qual funil veio cada evento.
 
-## Evidencia
+### Alteracao
 
-- `pg_indexes` para `lead_events` mostra apenas: `pkey(id)`, `idx_lead_events_funnel`, `idx_lead_events_lead`
-- Nenhum indice em `idempotency_key`
+**Arquivo:** `src/components/funnel/LeadTimeline.tsx`
 
-## Plano
+Na secao `TimelineEvents`, ao renderizar cada evento real e sintetico, adicionar uma badge com a **source** do evento (ex: `import`, `webhook`, `api`) e, para eventos `signup`/`re_signup`, mostrar o nome do funil no `detail`.
 
-### 1. Criar indice unico na coluna `idempotency_key`
+Especificamente:
 
-Migracao SQL:
+1. **Eventos reais (`type: "real"`)**: Adicionar badge com `ev.realEvent.source` (ja disponivel no objeto `LeadEvent`) ao lado do label do evento na timeline.
 
-```sql
-CREATE UNIQUE INDEX idx_lead_events_idempotency_key 
-ON public.lead_events (idempotency_key) 
-WHERE idempotency_key IS NOT NULL;
-```
+2. **Evento "Lead cadastrado" sintetico**: Ja mostra `via ${lead.source}` — manter como esta.
 
-Isso eh um indice parcial — so aplica para registros com `idempotency_key` preenchido (os inserts sem key continuam funcionando normalmente).
+3. **Eventos signup/re_signup**: Manter o nome do funil no detail (ja existe para signup via `payload_raw.funnel_name`) e adicionar badge de source.
 
-### 2. Reimportar
-
-Apos a migracao, o usuario reimporta o CSV e os eventos `signup` / `re_signup` serao persistidos corretamente e aparecerao na timeline.
-
-Nenhuma alteracao de codigo necessaria — o Edge Function e o LeadTimeline ja estao corretos.
+4. Na renderizacao da timeline (linhas 611-631), adicionar a badge de source para eventos do tipo `real`:
+   - Exibir `ev.realEvent.source` como badge colorida usando o mapa `sourceColors` existente
+   - Posicionar ao lado do label, antes do timeDiff
 
