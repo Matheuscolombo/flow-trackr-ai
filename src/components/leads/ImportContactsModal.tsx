@@ -142,6 +142,7 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
   const [result, setResult] = useState<{
     imported?: number;
     duplicates?: number;
+    duplicates_updated?: number;
     no_contact: number;
     found?: number;
     not_found?: number;
@@ -184,8 +185,10 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
   const selectedFunnel = funnels.find((f) => f.id === funnelId);
   const sortedStages = (selectedFunnel?.funnel_stages || []).sort((a, b) => a.order_index - b.order_index);
 
-  // Filter tags: global + funnel-specific
-  const availableTags = tags.filter((t) => t.scope === "global" || t.funnel_id === funnelId);
+  // Filter tags: in event_only mode show all, otherwise global + funnel-specific
+  const availableTags = importMode === "event_only"
+    ? tags
+    : tags.filter((t) => t.scope === "global" || t.funnel_id === funnelId);
 
   const reset = () => {
     setStep("upload");
@@ -319,6 +322,7 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
     } else {
       let accImported = 0;
       let accDuplicates = 0;
+      let accDuplicatesUpdated = 0;
       let accNoContact = 0;
 
       for (let i = 0; i < batches.length; i++) {
@@ -336,13 +340,14 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
           if (error) { console.error(`[ImportLeads] batch ${i + 1} error:`, error); continue; }
           accImported += data.imported ?? 0;
           accDuplicates += data.duplicates ?? 0;
+          accDuplicatesUpdated += data.duplicates_updated ?? 0;
           accNoContact += data.no_contact ?? 0;
         } catch (err) {
           console.error(`[ImportLeads] batch ${i + 1} threw:`, err);
         }
       }
 
-      setResult({ imported: accImported, duplicates: accDuplicates, no_contact: accNoContact });
+      setResult({ imported: accImported, duplicates: accDuplicates, duplicates_updated: accDuplicatesUpdated, no_contact: accNoContact });
     }
 
     setStep("result");
@@ -684,11 +689,14 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
                     <span className="text-2xl font-bold text-emerald-400">{result.imported}</span>
                     <span className="text-xs text-muted-foreground text-center">importados</span>
                   </div>
-                  <div className="flex-1 rounded-lg bg-amber-500/10 border border-amber-500/20 p-4 flex flex-col items-center gap-1">
-                    <AlertCircle className="w-6 h-6 text-amber-400" />
-                    <span className="text-2xl font-bold text-amber-400">{result.duplicates}</span>
-                    <span className="text-xs text-muted-foreground text-center">duplicados</span>
-                  </div>
+                  {(result.duplicates ?? 0) > 0 && (
+                    <div className="flex-1 rounded-lg bg-amber-500/10 border border-amber-500/20 p-4 flex flex-col items-center gap-1">
+                      <AlertCircle className="w-6 h-6 text-amber-400" />
+                      <span className="text-2xl font-bold text-amber-400">{result.duplicates}</span>
+                      <span className="text-xs text-muted-foreground text-center">duplicados atualizados</span>
+                      <span className="text-[9px] text-muted-foreground text-center leading-tight">cadastros incrementados</span>
+                    </div>
+                  )}
                 </>
               )}
               {result.no_contact > 0 && (
