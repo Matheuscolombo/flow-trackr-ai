@@ -1,25 +1,16 @@
 
 
-## Problema
+## Plan: Expandir área de conexão dos nós
 
-As páginas do grupo (sndflw.com — link de convite) e do checkout (go.cursosmatheuscolombo.com.br — página com autenticação) não renderizam bem pelo serviço de screenshot automático (thum.io), pois são páginas com redirecionamento, login wall ou conteúdo dinâmico.
+O objetivo é permitir que o usuário arraste uma conexão e solte em qualquer lugar do card, sem precisar acertar exatamente na bolinha (handle).
 
-## Solução
+### Mudanças técnicas
 
-Adicionar campo para **thumbnail personalizada** por etapa na aba de Configuração, permitindo que o usuário cole a URL de uma imagem para etapas cujo screenshot automático não funciona bem.
+1. **`FunnelFlowNode.tsx`** — Aumentar os handles para cobrir o card inteiro usando handles invisíveis que ocupam toda a área do nó (width/height 100%, opacity 0) além dos handles visuais pequenos existentes.
 
-### Passos
+2. **`TrafficSourceNode.tsx`** — Mesma abordagem: adicionar handles invisíveis de área completa sobrepostos ao card, mantendo os handles visuais pequenos como indicadores.
 
-1. **Adicionar coluna `thumbnail_url`** na tabela `funnel_stages` (se ainda não existir como coluna real — já está sendo lida no código mas precisa verificar se existe no schema).
+3. **`FunnelFlowEditor.tsx`** — Adicionar `connectionRadius={40}` no ReactFlow para aumentar o raio de snap da conexão, facilitando a detecção do nó alvo.
 
-2. **Adicionar campo de thumbnail no editor de etapas** (`FunnelConfigTab.tsx`): um input de URL abaixo do campo `page_url`, com placeholder "URL da imagem de thumbnail (opcional)".
-
-3. **Salvar `thumbnail_url`** junto com os demais campos ao salvar a configuração da etapa.
-
-4. **Lógica de prioridade no `FunnelFlowNode`** (já implementada):
-   - `thumbnail_url` manual → prioridade máxima
-   - YouTube → thumbnail nativa do vídeo
-   - Outros URLs → thum.io (fallback)
-
-Isso permite ao usuário colar um print/screenshot das páginas de grupo e checkout que o serviço automático não consegue capturar.
+A técnica é ter dois conjuntos de handles por posição: um visual (pequeno, visível) e um funcional (grande/invisível, cobrindo o card). Isso permite que o React Flow detecte a conexão ao soltar em qualquer parte do nó.
 
