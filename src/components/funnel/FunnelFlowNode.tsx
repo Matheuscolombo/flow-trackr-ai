@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
-import { Globe, Zap, ImageIcon } from "lucide-react";
+import { Globe, Zap, ImageIcon, ExternalLink } from "lucide-react";
 
 export interface FlowNodeData {
   label: string;
@@ -66,10 +66,24 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
           </div>
           <p className="text-2xl font-bold text-foreground tabular-nums leading-tight">{count}</p>
           <p className="text-[10px] text-muted-foreground mb-2">leads</p>
-          <Badge variant="outline" className="text-[9px] gap-1 px-1.5 py-0 h-4">
-            {isPage ? <Globe className="w-2.5 h-2.5" /> : <Zap className="w-2.5 h-2.5" />}
-            {isPage ? "Página" : "Evento"}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="outline" className="text-[9px] gap-1 px-1.5 py-0 h-4">
+              {isPage ? <Globe className="w-2.5 h-2.5" /> : <Zap className="w-2.5 h-2.5" />}
+              {isPage ? "Página" : "Evento"}
+            </Badge>
+            {isPage && pageUrl && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(pageUrl, "_blank", "noopener,noreferrer");
+                }}
+                className="flex items-center gap-0.5 text-[9px] text-muted-foreground hover:text-primary transition-colors bg-muted/50 hover:bg-muted rounded px-1.5 h-4"
+                title="Abrir página"
+              >
+                <ExternalLink className="w-2.5 h-2.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
