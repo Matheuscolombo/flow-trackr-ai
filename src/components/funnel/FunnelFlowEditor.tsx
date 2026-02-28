@@ -10,6 +10,7 @@ import {
   useNodesState,
   useEdgesState,
   type NodeChange,
+  type EdgeChange,
   BackgroundVariant,
   MarkerType,
   addEdge,
@@ -348,6 +349,27 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
     [onNodesChange, savePositions, setNodes]
   );
 
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      const removals = changes.filter((c) => c.type === "remove");
+      if (removals.length > 0) {
+        removals.forEach((r) => {
+          if (r.type === "remove") {
+            // Delete from funnel_edges
+            supabase
+              .from("funnel_edges" as any)
+              .delete()
+              .eq("id", r.id)
+              .then(() => {});
+            setCustomEdges((prev) => prev.filter((e) => e.id !== r.id));
+          }
+        });
+      }
+      onEdgesChange(changes);
+    },
+    [onEdgesChange]
+  );
+
   const addSourceNode = async (type: TrafficIconType, label: string) => {
     setPopoverOpen(false);
     const { data, error } = await supabase
@@ -435,10 +457,11 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
           nodes={nodes}
           edges={edges}
           onNodesChange={handleNodesChange}
-          onEdgesChange={onEdgesChange}
+          onEdgesChange={handleEdgesChange}
           onConnect={onConnect}
           onMoveEnd={onMoveEnd}
           nodeTypes={nodeTypes}
+          deleteKeyCode={["Backspace", "Delete"]}
           fitView={!savedViewport}
           fitViewOptions={{ padding: 0.15, minZoom: 0.6, maxZoom: 1.2 }}
           defaultViewport={savedViewport ?? { x: 0, y: 0, zoom: 0.85 }}
