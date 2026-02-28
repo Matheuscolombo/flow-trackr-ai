@@ -1,34 +1,30 @@
 
 
-## Melhorias: Tags existentes + Registro de duplicados
+## Limpar leads do funil "DISPARO API - DESAFIO PROTOCOLOS ANTI-DOENÇAS"
 
-### 1. Tags existentes no importador
+**Dados encontrados:**
+- Funnel ID: `cd1addd9-d63d-4e35-adf3-b0a24d8fdc97`
+- 701 posições de leads neste funil
+- 641 leads que existem SOMENTE neste funil (serão deletados)
+- 60 leads que também estão em outros funis (serão mantidos, só removidos deste funil)
 
-O código já busca tags do banco e lista como chips clicáveis. Porém, há um filtro em `availableTags` (linha 188) que só mostra tags `global` ou do funil selecionado. No modo "Registrar evento", como `funnelId` pode estar vazio, quase nenhuma tag aparece.
+### Plano de execução
 
-**Correção em `ImportContactsModal.tsx`:**
-- No modo `event_only`, mostrar TODAS as tags (sem filtro por funil)
-- Adicionar uma seção visual separando "Tags existentes" das que o usuário pode criar
-- Manter o input "Nova tag..." como está
+Criar uma edge function temporária `clear-funnel-leads` que:
 
-### 2. Registro de tentativas duplicadas (signup_count)
+1. Recebe `funnel_id` no body
+2. Verifica que o funil pertence ao workspace do usuário autenticado
+3. Coleta todos os `lead_id` do funil
+4. Deleta todos os registros de `lead_funnel_stages` deste funil
+5. Deleta todos os `lead_events` deste funil
+6. Identifica leads órfãos (sem posição em nenhum outro funil)
+7. Deleta `lead_tags` e `leads` dos órfãos
+8. Retorna contagem do que foi deletado
 
-Atualmente, duplicados são apenas contados e descartados. A ideia é registrar cada tentativa de cadastro duplicado como dado útil para scoring futuro.
+Depois de executar, a edge function pode ser removida ou mantida para uso futuro.
 
-**Mudanças no banco de dados:**
-- Adicionar coluna `signup_count` (integer, default 1) na tabela `leads`
-- Adicionar coluna `last_signup_at` (timestamp) na tabela `leads`
+### Arquivos
+1. `supabase/functions/clear-funnel-leads/index.ts` — nova edge function
 
-**Mudanças na edge function `import-leads/index.ts`:**
-- Quando um lead duplicado é encontrado (já existe no funil), incrementar `signup_count` e atualizar `last_signup_at` ao invés de simplesmente ignorar
-- Retornar no resultado: `duplicates_updated` para indicar quantos foram atualizados
-
-**Mudanças no frontend (`ImportContactsModal.tsx`):**
-- Na tela de resultado, ao invés de só "166 duplicados", mostrar algo como "166 duplicados atualizados (contagem de cadastros incrementada)"
-- Texto explicativo: "Leads que se cadastraram mais de uma vez têm o contador atualizado"
-
-### Arquivos modificados
-1. **Migração SQL** — adicionar `signup_count` e `last_signup_at` em `leads`
-2. **`supabase/functions/import-leads/index.ts`** — incrementar signup_count para duplicados
-3. **`src/components/leads/ImportContactsModal.tsx`** — corrigir filtro de tags + atualizar tela de resultado
+Após deploy, chamarei a function com o funnel_id para executar a limpeza.
 
