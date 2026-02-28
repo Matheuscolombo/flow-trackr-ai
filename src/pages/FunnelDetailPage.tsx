@@ -1,7 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, Settings, Webhook, Columns, ChevronRight, Loader2, Clock, TrendingUp, BarChart2, Pencil, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -134,6 +134,58 @@ const FunnelDetailPage = () => {
   const [leadsBuyerStats, setLeadsBuyerStats] = useState<{ singleBuyers: number; multiBuyers: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [serverSearchResults, setServerSearchResults] = useState<Record<string, Lead[]> | null>(null);
+  const [searching, setSearching] = useState(false);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Server-side search effect with debounce
+  useEffect(() => {
+    if (!id || !stages.length) return;
+    const q = searchQuery.trim().toLowerCase();
+    
+    if (q.length < 3) {
+      setServerSearchResults(null);
+      setSearching(false);
+      return;
+    }
+
+    setSearching(true);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    
+    searchTimerRef.current = setTimeout(async () => {
+      const escapedQ = `%${q}%`;
+      const { data: lfsRows } = await supabase
+        .from("lead_funnel_stages")
+        .select("stage_id, entered_at, source, leads!inner(id, name, email, phone, utm_source, total_revenue, purchase_count, is_ghost, created_at, imported_at, source)")
+        .eq("funnel_id", id)
+        .or(`name.ilike.${escapedQ},email.ilike.${escapedQ},phone.ilike.${escapedQ}`, { referencedTable: "leads" })
+        .limit(50);
+
+      const stageMap: Record<string, FunnelStage> = {};
+      stages.forEach((s) => { stageMap[s.id] = s; });
+
+      const byStage: Record<string, Lead[]> = {};
+      stages.forEach((s) => { byStage[s.id] = []; });
+
+      (lfsRows || []).forEach((row: any) => {
+        if (!row.leads) return;
+        const stage = stageMap[row.stage_id];
+        if (!stage) return;
+        const lead = adaptLeadForKanban(row, stage, id);
+        // Avoid duplicates
+        if (!byStage[row.stage_id].some((l) => l.id === lead.id)) {
+          byStage[row.stage_id].push(lead);
+        }
+      });
+
+      setServerSearchResults(byStage);
+      setSearching(false);
+    }, 300);
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery, id, stages]);
 
   useEffect(() => {
     if (!id) return;
@@ -419,6 +471,46 @@ const FunnelDetailPage = () => {
 
             {(() => {
               const q = searchQuery.trim().toLowerCase();
+
+              // If server search returned results, use them (merged with client-side)
+              if (q.length >= 3 && serverSearchResults) {
+                // Merge: server results + client-side filtered, deduplicated by lead.id
+                const merged: Record<string, Lead[]> = {};
+                stages.forEach((s) => {
+                  const serverLeads = serverSearchResults[s.id] || [];
+                  const clientLeads = (leadsByStage[s.id] || []).filter((l) =>
+                    (l.name?.toLowerCase().includes(q)) ||
+                    (l.email?.toLowerCase().includes(q)) ||
+                    (l.phone?.toLowerCase().includes(q))
+                  );
+                  const seen = new Set<string>();
+                  const combined: Lead[] = [];
+                  [...serverLeads, ...clientLeads].forEach((l) => {
+                    if (!seen.has(l.id)) { seen.add(l.id); combined.push(l); }
+                  });
+                  merged[s.id] = combined;
+                });
+
+                return (
+                  <>
+                    {searching && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Buscando em todos os leads...
+                      </div>
+                    )}
+                    <KanbanBoard
+                      stages={stages}
+                      leadsByStage={merged}
+                      funnelId={funnel.id}
+                      stageCounts={Object.fromEntries(stageCounts.map((c) => [c.stage_id, c.count]))}
+                      sortBy={sortBy}
+                    />
+                  </>
+                );
+              }
+
+              // Client-side only filter
               const filteredLeads = q
                 ? Object.fromEntries(
                     Object.entries(leadsByStage).map(([stageId, leads]) => [
@@ -433,13 +525,21 @@ const FunnelDetailPage = () => {
                 : leadsByStage;
 
               return (
-                <KanbanBoard
-                  stages={stages}
-                  leadsByStage={filteredLeads}
-                  funnelId={funnel.id}
-                  stageCounts={Object.fromEntries(stageCounts.map((c) => [c.stage_id, c.count]))}
-                  sortBy={sortBy}
-                />
+                <>
+                  {searching && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Buscando...
+                    </div>
+                  )}
+                  <KanbanBoard
+                    stages={stages}
+                    leadsByStage={filteredLeads}
+                    funnelId={funnel.id}
+                    stageCounts={Object.fromEntries(stageCounts.map((c) => [c.stage_id, c.count]))}
+                    sortBy={sortBy}
+                  />
+                </>
               );
             })()}
           </div>
