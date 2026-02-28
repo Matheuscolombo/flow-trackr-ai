@@ -9,10 +9,11 @@ import { KanbanBoard } from "@/components/funnel/KanbanBoard";
 import { WebhookConfig } from "@/components/funnel/WebhookConfig";
 import { FunnelVisual } from "@/components/funnel/FunnelVisual";
 import { FunnelConfigTab } from "@/components/funnel/FunnelConfigTab";
+import { FunnelFlowEditor } from "@/components/funnel/FunnelFlowEditor";
 import { Badge } from "@/components/ui/badge";
-import type { FunnelStage, Lead } from "@/types";
+import type { FunnelStage, Lead, StageTransitionRule } from "@/types";
 
-type Tab = "kanban" | "funnel" | "config" | "webhook";
+type Tab = "kanban" | "funnel" | "visual" | "config" | "webhook";
 
 interface DbFunnel {
   id: string;
@@ -316,6 +317,7 @@ const FunnelDetailPage = () => {
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: "kanban", label: "Kanban", icon: Columns },
     { id: "funnel", label: "Funil", icon: BarChart2 },
+    { id: "visual", label: "Visual", icon: TrendingUp },
     { id: "config", label: "Configuração", icon: Settings },
     { id: "webhook", label: "Webhook", icon: Webhook },
   ];
@@ -598,6 +600,15 @@ const FunnelDetailPage = () => {
             stageCounts={stageCounts}
             funnelId={funnel.id}
             leadsBuyerStats={leadsBuyerStats}
+          />
+        )}
+
+        {activeTab === "visual" && (
+          <FunnelFlowEditor
+            stages={stages}
+            rules={rules as StageTransitionRule[]}
+            stageCounts={stageCounts}
+            funnelId={funnel.id}
           />
         )}
 
