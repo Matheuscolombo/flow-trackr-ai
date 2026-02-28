@@ -885,6 +885,10 @@ export type Database = {
         }[]
       }
       get_sales_breakdown: { Args: { p_workspace_id: string }; Returns: Json }
+      increment_signup_count: {
+        Args: { p_lead_id: string }
+        Returns: undefined
+      }
       recalculate_lead_sales_stats: {
         Args: { p_lead_id: string }
         Returns: undefined
