@@ -644,6 +644,17 @@ async function handleFunnelImport(
 
   const existingInFunnel = new Set((existingPositions || []).map((p: { lead_id: string }) => p.lead_id));
 
+  // First pass: count occurrences per contact key in the CSV
+  const contactCounts = new Map<string, number>();
+  for (const row of rows) {
+    const email = normEmail(getFieldValue(row, "email", overrides, headers));
+    const phone = normPhone(getFieldValue(row, "telefone", overrides, headers));
+    if (!email && !phone) continue;
+    if (email && !email.includes("@")) continue;
+    const contactKey = phone || email;
+    contactCounts.set(contactKey, (contactCounts.get(contactKey) || 0) + 1);
+  }
+
   let imported = 0;
   let duplicates = 0;
   let noContact = 0;
@@ -652,6 +663,8 @@ async function handleFunnelImport(
   const tagRows: Record<string, unknown>[] = [];
   const seenContacts = new Set<string>();
   const duplicateLeadIds: string[] = [];
+  // Map contactKey → signup_count from CSV (for leads that get created or need update)
+  const signupCountByContact = new Map<string, number>();
 
   for (const row of rows) {
     const email = normEmail(getFieldValue(row, "email", overrides, headers));
@@ -665,12 +678,14 @@ async function handleFunnelImport(
     if (seenContacts.has(contactKey)) { duplicates++; continue; }
     seenContacts.add(contactKey);
 
+    const csvCount = contactCounts.get(contactKey) || 1;
+    signupCountByContact.set(contactKey, csvCount);
+
     let leadId = (email && emailIndex[email]) || (phone && phoneIndex[phone]) || null;
 
     if (leadId) {
       if (existingInFunnel.has(leadId)) {
         duplicates++;
-        // Increment signup_count for scoring
         duplicateLeadIds.push(leadId);
         continue;
       }
@@ -683,6 +698,7 @@ async function handleFunnelImport(
         source: "import",
         imported_at: new Date().toISOString(),
         metadata: { imported: true },
+        signup_count: csvCount,
       });
     }
     imported++;
@@ -750,13 +766,29 @@ async function handleFunnelImport(
     }
   }
 
-  // Update signup_count for duplicates
-  const uniqueDuplicateIds = [...new Set(duplicateLeadIds)];
-  for (let i = 0; i < uniqueDuplicateIds.length; i += CHUNK) {
-    const chunk = uniqueDuplicateIds.slice(i, i + CHUNK);
-    for (const lid of chunk) {
-      await supabase.rpc("increment_signup_count", { p_lead_id: lid });
+  // Update signup_count for ALL leads that had CSV duplicates (not just funnel-duplicates)
+  // For existing leads already in DB: update signup_count to reflect CSV occurrences
+  const allLeadUpdates: { id: string; count: number }[] = [];
+  for (const [contactKey, csvCount] of signupCountByContact.entries()) {
+    if (csvCount <= 1) continue;
+    const leadId = (emailIndex[contactKey]) || (phoneIndex[contactKey]) || null;
+    if (leadId) {
+      allLeadUpdates.push({ id: leadId, count: csvCount });
     }
+  }
+  // Also increment for leads that were already in funnel (duplicateLeadIds)
+  const uniqueDuplicateIds = [...new Set(duplicateLeadIds)];
+  for (const lid of uniqueDuplicateIds) {
+    if (!allLeadUpdates.some((u) => u.id === lid)) {
+      allLeadUpdates.push({ id: lid, count: 1 }); // at least 1 extra signup
+    }
+  }
+  // Batch update signup_count
+  for (const upd of allLeadUpdates) {
+    await supabase
+      .from("leads")
+      .update({ signup_count: upd.count, last_signup_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq("id", upd.id);
   }
 
   console.log(`[import-leads:funnel] imported=${imported} duplicates=${duplicates} duplicatesUpdated=${uniqueDuplicateIds.length} noContact=${noContact}`);
