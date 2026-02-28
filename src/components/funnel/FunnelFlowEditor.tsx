@@ -42,6 +42,13 @@ interface SourceNode {
   lead_count: number;
 }
 
+interface CustomEdge {
+  id: string;
+  funnel_id: string;
+  source_node_id: string;
+  target_node_id: string;
+}
+
 interface Props {
   stages: FunnelStage[];
   rules: StageTransitionRule[];
@@ -110,6 +117,7 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewportDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sourceNodes, setSourceNodes] = useState<SourceNode[]>([]);
+  const [customEdges, setCustomEdges] = useState<CustomEdge[]>([]);
   const [popoverOpen, setPopoverOpen] = useState(false);
 
   const viewportKey = `funnel-viewport-${funnelId}`;
@@ -126,7 +134,7 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
       localStorage.setItem(viewportKey, JSON.stringify(viewport));
     }, 300);
   }, [viewportKey]);
-  // Load source nodes
+  // Load source nodes and custom edges
   useEffect(() => {
     supabase
       .from("funnel_source_nodes" as any)
@@ -134,6 +142,14 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
       .eq("funnel_id", funnelId)
       .then(({ data }) => {
         if (data) setSourceNodes(data as any as SourceNode[]);
+      });
+
+    supabase
+      .from("funnel_edges" as any)
+      .select("*")
+      .eq("funnel_id", funnelId)
+      .then(({ data }) => {
+        if (data) setCustomEdges(data as any as CustomEdge[]);
       });
   }, [funnelId]);
 
@@ -200,7 +216,7 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
         };
       });
 
-    // Source → stage edges
+    // Source → stage edges (legacy connected_stage_id)
     const sourceEdges: Edge[] = sourceNodes
       .filter((sn) => sn.connected_stage_id)
       .map((sn) => ({
@@ -217,21 +233,45 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
         markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--muted-foreground))" },
       }));
 
-    return [...sourceEdges, ...transitionEdges];
-  }, [rules, countMap, sourceNodes]);
+    // Custom user-drawn edges
+    const userEdges: Edge[] = customEdges.map((ce) => ({
+      id: ce.id,
+      source: ce.source_node_id,
+      target: ce.target_node_id,
+      animated: true,
+      style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--primary))" },
+    }));
+
+    return [...sourceEdges, ...transitionEdges, ...userEdges];
+  }, [rules, countMap, sourceNodes, customEdges]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(allNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(allEdges);
 
-  // Handle new connections drawn by user
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
 
-      // Check if source is a traffic source node
+      // Persist edge to funnel_edges table
+      supabase
+        .from("funnel_edges" as any)
+        .upsert({
+          funnel_id: funnelId,
+          source_node_id: connection.source,
+          target_node_id: connection.target,
+        } as any, { onConflict: "funnel_id,source_node_id,target_node_id" })
+        .select()
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setCustomEdges((prev) => [...prev.filter((e) => !(e.source_node_id === connection.source && e.target_node_id === connection.target)), data as any as CustomEdge]);
+          }
+        });
+
+      // Also update legacy connected_stage_id for source nodes
       const isSourceNode = sourceNodes.some((s) => s.id === connection.source);
       if (isSourceNode) {
-        // Save connected_stage_id for source node
         supabase
           .from("funnel_source_nodes" as any)
           .update({ connected_stage_id: connection.target } as any)
@@ -258,12 +298,16 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
         )
       );
     },
-    [sourceNodes, setEdges]
+    [sourceNodes, setEdges, funnelId]
   );
 
   useEffect(() => {
     setNodes(allNodes);
   }, [allNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges(allEdges);
+  }, [allEdges, setEdges]);
 
   const savePositions = useCallback(
     (updatedNodes: Node[]) => {
