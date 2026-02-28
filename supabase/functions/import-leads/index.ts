@@ -856,7 +856,7 @@ async function handleFunnelImport(
           event_name: "re_signup",
           source: "import",
           timestamp_event: isoTs,
-          payload_raw: { signup_number: i + 1, cross_batch: true },
+          payload_raw: { signup_number: i + 1, cross_batch: true, funnel_name: funnelName },
           idempotency_key: `re_signup_${upd.id}_${isoTs}`,
         });
       }
@@ -864,20 +864,36 @@ async function handleFunnelImport(
       for (let i = 0; i < upd.timestamps.length; i++) {
         await supabase.rpc("increment_signup_count", { p_lead_id: upd.id });
       }
-    } else if (upd.count > 1) {
-      // For same-batch re-signups: skip the first one (original signup)
-      for (let i = 1; i < upd.timestamps.length; i++) {
-        const ts = upd.timestamps[i];
-        const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+    } else {
+      // For new leads in this funnel: create signup event for the FIRST timestamp
+      if (upd.timestamps.length > 0) {
+        const firstTs = upd.timestamps[0];
+        const isoFirstTs = new Date(firstTs.replace(" ", "T")).toISOString();
         eventRows.push({
           lead_id: upd.id,
           funnel_id: funnelId,
-          event_name: "re_signup",
+          event_name: "signup",
           source: "import",
-          timestamp_event: isoTs,
-          payload_raw: { signup_number: i + 1, total_signups: upd.count },
-          idempotency_key: `re_signup_${upd.id}_${isoTs}`,
+          timestamp_event: isoFirstTs,
+          payload_raw: { signup_number: 1, total_signups: upd.count, funnel_name: funnelName },
+          idempotency_key: `signup_${upd.id}_${funnelId}`,
         });
+      }
+      // Then create re_signup events for subsequent timestamps
+      if (upd.count > 1) {
+        for (let i = 1; i < upd.timestamps.length; i++) {
+          const ts = upd.timestamps[i];
+          const isoTs = new Date(ts.replace(" ", "T")).toISOString();
+          eventRows.push({
+            lead_id: upd.id,
+            funnel_id: funnelId,
+            event_name: "re_signup",
+            source: "import",
+            timestamp_event: isoTs,
+            payload_raw: { signup_number: i + 1, total_signups: upd.count, funnel_name: funnelName },
+            idempotency_key: `re_signup_${upd.id}_${isoTs}`,
+          });
+        }
       }
     }
   }
