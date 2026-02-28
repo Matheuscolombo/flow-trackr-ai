@@ -31,11 +31,6 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
   return (
     <div className="relative group">
       {/* 4-direction handles */}
-      {/* Invisible full-area handles for easy connection */}
-      <Handle type="target" position={Position.Top} id="full-target" className="!absolute !inset-0 !w-full !h-full !opacity-0 !rounded-xl !transform-none !left-0 !top-0 !border-0" />
-      <Handle type="source" position={Position.Bottom} id="full-source" className="!absolute !inset-0 !w-full !h-full !opacity-0 !rounded-xl !transform-none !left-0 !top-0 !border-0" />
-
-      {/* Visual indicator handles */}
       <Handle type="target" position={Position.Top} className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-top-1" />
       <Handle type="target" position={Position.Left} id="left-target" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-left-1" />
 ...
