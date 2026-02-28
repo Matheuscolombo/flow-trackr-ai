@@ -1,5 +1,5 @@
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Settings, Webhook, Columns, ChevronRight, Loader2, Clock, TrendingUp, BarChart2, Pencil } from "lucide-react";
+import { ArrowLeft, Settings, Webhook, Columns, ChevronRight, Loader2, Clock, TrendingUp, BarChart2, Pencil, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -107,6 +107,7 @@ const FunnelDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<Tab>("kanban");
   const [sortBy, setSortBy] = useState<"recent" | "value">("recent");
+  const [searchQuery, setSearchQuery] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [editName, setEditName] = useState("");
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -370,40 +371,77 @@ const FunnelDetailPage = () => {
               })}
             </div>
 
-            {/* Sort toggle */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-muted-foreground">Ordenar:</span>
-              <button
-                onClick={() => setSortBy("recent")}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                  sortBy === "recent"
-                    ? "bg-primary/15 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                <Clock className="w-2.5 h-2.5" />
-                Mais recentes
-              </button>
-              <button
-                onClick={() => setSortBy("value")}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                  sortBy === "value"
-                    ? "bg-primary/15 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                <TrendingUp className="w-2.5 h-2.5" />
-                Maior valor
-              </button>
+            {/* Search + Sort */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por nome, email ou telefone..."
+                  className="h-7 text-xs pl-7 pr-7 w-64"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-muted-foreground">Ordenar:</span>
+                <button
+                  onClick={() => setSortBy("recent")}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                    sortBy === "recent"
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Clock className="w-2.5 h-2.5" />
+                  Mais recentes
+                </button>
+                <button
+                  onClick={() => setSortBy("value")}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                    sortBy === "value"
+                      ? "bg-primary/15 text-primary"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <TrendingUp className="w-2.5 h-2.5" />
+                  Maior valor
+                </button>
+              </div>
             </div>
 
-            <KanbanBoard
-              stages={stages}
-              leadsByStage={leadsByStage}
-              funnelId={funnel.id}
-              stageCounts={Object.fromEntries(stageCounts.map((c) => [c.stage_id, c.count]))}
-              sortBy={sortBy}
-            />
+            {(() => {
+              const q = searchQuery.trim().toLowerCase();
+              const filteredLeads = q
+                ? Object.fromEntries(
+                    Object.entries(leadsByStage).map(([stageId, leads]) => [
+                      stageId,
+                      leads.filter((l) =>
+                        (l.name?.toLowerCase().includes(q)) ||
+                        (l.email?.toLowerCase().includes(q)) ||
+                        (l.phone?.toLowerCase().includes(q))
+                      ),
+                    ])
+                  )
+                : leadsByStage;
+
+              return (
+                <KanbanBoard
+                  stages={stages}
+                  leadsByStage={filteredLeads}
+                  funnelId={funnel.id}
+                  stageCounts={Object.fromEntries(stageCounts.map((c) => [c.stage_id, c.count]))}
+                  sortBy={sortBy}
+                />
+              );
+            })()}
           </div>
         )}
 
