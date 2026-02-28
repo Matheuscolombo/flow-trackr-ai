@@ -5,11 +5,13 @@ import {
   Controls,
   type Node,
   type Edge,
+  type Connection,
   useNodesState,
   useEdgesState,
   type NodeChange,
   BackgroundVariant,
   MarkerType,
+  addEdge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import FunnelFlowNode, { type FlowNodeData } from "./FunnelFlowNode";
@@ -164,7 +166,45 @@ export function FunnelFlowEditor({ stages, rules, stageCounts, funnelId }: Props
   }, [rules, countMap, sourceNodes]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(allNodes);
-  const [edges, , onEdgesChange] = useEdgesState(allEdges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(allEdges);
+
+  // Handle new connections drawn by user
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+
+      // Check if source is a traffic source node
+      const isSourceNode = sourceNodes.some((s) => s.id === connection.source);
+      if (isSourceNode) {
+        // Save connected_stage_id for source node
+        supabase
+          .from("funnel_source_nodes" as any)
+          .update({ connected_stage_id: connection.target } as any)
+          .eq("id", connection.source)
+          .then(() => {});
+
+        setSourceNodes((prev) =>
+          prev.map((s) =>
+            s.id === connection.source ? { ...s, connected_stage_id: connection.target } : s
+          )
+        );
+      }
+
+      // Add edge visually
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            animated: true,
+            style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--primary))" },
+          },
+          eds
+        )
+      );
+    },
+    [sourceNodes, setEdges]
+  );
 
   useEffect(() => {
     setNodes(allNodes);
@@ -284,6 +324,7 @@ export function FunnelFlowEditor({ stages, rules, stageCounts, funnelId }: Props
           edges={edges}
           onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.15, minZoom: 0.6, maxZoom: 1.2 }}

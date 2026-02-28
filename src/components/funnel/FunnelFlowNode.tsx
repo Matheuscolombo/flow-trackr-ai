@@ -19,7 +19,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
   const [imgError, setImgError] = useState(false);
 
   // Auto-generate thumbnail from page_url if no custom thumbnail is set
-  const effectiveThumb = thumbnailUrl || (pageUrl ? `https://image.thum.io/get/width/400/${pageUrl}` : null);
+  const effectiveThumb = thumbnailUrl || (pageUrl ? `https://image.thum.io/get/width/600/${pageUrl}` : null);
   const showThumbnail = isPage && effectiveThumb && !imgError;
 
   return (
@@ -29,12 +29,12 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
       <Handle type="target" position={Position.Left} id="left-target" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-left-1" />
 
       <div
-        className="bg-card border-2 rounded-xl min-w-[200px] max-w-[220px] shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
+        className="bg-card border-2 rounded-xl min-w-[240px] max-w-[260px] shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
         style={{ borderColor: color }}
       >
         {/* Thumbnail area */}
         {showThumbnail ? (
-          <div className="w-full h-[120px] bg-muted/30 relative overflow-hidden">
+          <div className="w-full h-[160px] bg-muted/30 relative overflow-hidden">
             <img
               src={effectiveThumb!}
               alt={label}
