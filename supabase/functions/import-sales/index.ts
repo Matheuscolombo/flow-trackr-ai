@@ -300,7 +300,8 @@ Deno.serve(async (req) => {
     let enriched = 0;
     let ghosts = 0;
     let ignored = 0;
-    let noContact = 0; // lines without email/phone
+    let noContact = 0; // lines without email/phone (order bumps, renewals, etc.)
+    let orphanSales = 0; // sales inserted without a lead
     let duplicates = 0;
     let totalRevenue = 0;
     let insertedPaid = 0;
@@ -309,48 +310,33 @@ Deno.serve(async (req) => {
 
     const seenInvoices = new Set<string>();
 
+    // Two-pass approach:
+    // Pass 1: process rows WITH contact info (email/phone)
+    // Pass 2: process rows WITHOUT contact info, linking by invoice or previous row
+
+    interface ParsedRow {
+      index: number;
+      parsed: ReturnType<typeof parseUniversalRow>;
+    }
+
+    const contactRows: ParsedRow[] = [];
+    const noContactRows: ParsedRow[] = [];
+
+    // Pre-parse all rows and split into two groups
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const parsed = parseUniversalRow(row, headers, platform, i, overrides);
-
-      // Require at least email or phone to process
-      if (!parsed.email && !parsed.phone) { noContact++; ignored++; continue; }
-
-      // Dedup within batch
-      const dedupeKey = `${platform}:${parsed.external_invoice_id}`;
-      if (seenInvoices.has(dedupeKey)) { duplicates++; continue; }
-      seenInvoices.add(dedupeKey);
-
-      const emailKey = normEmail(parsed.email);
-      const phoneKey = normPhone(parsed.phone);
-      let leadId: string | null =
-        (emailKey && emailIndex[emailKey]) ||
-        (phoneKey && phoneIndex[phoneKey]) ||
-        null;
-
-      if (leadId) {
-        enriched++;
-        leadsToEnrich.add(leadId);
+      if (parsed.email || parsed.phone) {
+        contactRows.push({ index: i, parsed });
       } else {
-        // Deduplicate ghosts: only create one ghost per unique email/phone
-        const ghostKey = emailKey || phoneKey;
-        if (!ghostMap.has(ghostKey)) {
-          ghostMap.set(ghostKey, {
-            workspace_id: workspaceId,
-            email: parsed.email || null,
-            phone: parsed.phone || null,
-            name: parsed.buyer_name || "Comprador Externo",
-            source: platform,
-            country: "BR",
-            is_ghost: true,
-            imported_at: new Date().toISOString(),
-            metadata: { imported: true, ghost: true, platform },
-          });
-          ghosts++;
-        }
+        noContactRows.push({ index: i, parsed });
+        noContact++;
       }
+    }
 
-      const saleRecord = {
+    // Helper to build a sale record
+    function buildSaleRecord(parsed: ReturnType<typeof parseUniversalRow>, leadId: string | null) {
+      return {
         workspace_id: workspaceId,
         lead_id: leadId,
         platform: parsed.platform,
@@ -385,13 +371,136 @@ Deno.serve(async (req) => {
         buyer_phone: parsed.phone || null,
         buyer_name: parsed.buyer_name || null,
       };
+    }
 
-      salesToInsert.push(saleRecord);
-      if (parsed.status === "paid") totalRevenue += parsed.net_value;
-      if (parsed.status === "paid") insertedPaid++;
+    function trackSaleStats(parsed: ReturnType<typeof parseUniversalRow>) {
+      if (parsed.status === "paid") { totalRevenue += parsed.net_value; insertedPaid++; }
       else if (parsed.status === "refunded") insertedRefunded++;
       else if (parsed.status === "pending") insertedPending++;
     }
+
+    // Index: invoice_id -> lead_id (built during pass 1, used in pass 2)
+    const invoiceLeadIndex: Record<string, string> = {};
+    // Index: CSV row index -> { email, phone } for positional fallback
+    const rowContactIndex: Record<number, { email: string; phone: string }> = {};
+
+    // ── Pass 1: rows WITH contact info ─────────────────────────────────────────
+    for (const { index, parsed } of contactRows) {
+      const dedupeKey = `${platform}:${parsed.external_invoice_id}`;
+      if (seenInvoices.has(dedupeKey)) { duplicates++; continue; }
+      seenInvoices.add(dedupeKey);
+
+      const emailKey = normEmail(parsed.email);
+      const phoneKey = normPhone(parsed.phone);
+      let leadId: string | null =
+        (emailKey && emailIndex[emailKey]) ||
+        (phoneKey && phoneIndex[phoneKey]) ||
+        null;
+
+      if (leadId) {
+        enriched++;
+        leadsToEnrich.add(leadId);
+      } else {
+        const ghostKey = emailKey || phoneKey;
+        if (!ghostMap.has(ghostKey)) {
+          ghostMap.set(ghostKey, {
+            workspace_id: workspaceId,
+            email: parsed.email || null,
+            phone: parsed.phone || null,
+            name: parsed.buyer_name || "Comprador Externo",
+            source: platform,
+            country: "BR",
+            is_ghost: true,
+            imported_at: new Date().toISOString(),
+            metadata: { imported: true, ghost: true, platform },
+          });
+          ghosts++;
+        }
+      }
+
+      // Store contact info for positional fallback
+      rowContactIndex[index] = { email: parsed.email, phone: parsed.phone };
+      // Store invoice -> lead mapping for pass 2
+      if (leadId) {
+        invoiceLeadIndex[parsed.external_invoice_id] = leadId;
+      }
+
+      salesToInsert.push(buildSaleRecord(parsed, leadId));
+      trackSaleStats(parsed);
+    }
+
+    // ── Pass 2: rows WITHOUT contact info (order bumps, renewals, upsells) ────
+    for (const { index, parsed } of noContactRows) {
+      const dedupeKey = `${platform}:${parsed.external_invoice_id}`;
+      if (seenInvoices.has(dedupeKey)) { duplicates++; continue; }
+      seenInvoices.add(dedupeKey);
+
+      let linkedLeadId: string | null = null;
+
+      // Strategy 1: Match by invoice prefix (e.g. "12345" matches "12345", "12345-bump")
+      const invoiceBase = parsed.external_invoice_id.replace(/[-_](bump|upsell|renewal).*$/i, "");
+      if (invoiceLeadIndex[invoiceBase]) {
+        linkedLeadId = invoiceLeadIndex[invoiceBase];
+      }
+
+      // Strategy 2: exact invoice match (same invoice_id, different product)
+      if (!linkedLeadId && invoiceLeadIndex[parsed.external_invoice_id]) {
+        linkedLeadId = invoiceLeadIndex[parsed.external_invoice_id];
+      }
+
+      // Strategy 3: Look for any invoice that starts with the same base
+      if (!linkedLeadId) {
+        for (const [inv, lid] of Object.entries(invoiceLeadIndex)) {
+          const invBase = inv.replace(/[-_](bump|upsell|renewal).*$/i, "");
+          if (invBase === invoiceBase) {
+            linkedLeadId = lid;
+            break;
+          }
+        }
+      }
+
+      // Strategy 4: Positional fallback — use contact from the previous CSV row
+      if (!linkedLeadId) {
+        const prevContact = rowContactIndex[index - 1];
+        if (prevContact) {
+          const ek = normEmail(prevContact.email);
+          const pk = normPhone(prevContact.phone);
+          linkedLeadId =
+            (ek && emailIndex[ek]) ||
+            (pk && phoneIndex[pk]) ||
+            null;
+        }
+      }
+
+      if (linkedLeadId) {
+        leadsToEnrich.add(linkedLeadId);
+        enriched++;
+      } else {
+        orphanSales++;
+        console.log(`[import-sales] orphan sale (no contact, no invoice match): row=${index} invoice=${parsed.external_invoice_id} product=${parsed.product_name} value=${parsed.gross_value}`);
+      }
+
+      // Store invoice -> lead for subsequent no-contact rows in same invoice group
+      if (linkedLeadId) {
+        invoiceLeadIndex[parsed.external_invoice_id] = linkedLeadId;
+      }
+
+      const saleRecord = buildSaleRecord(parsed, linkedLeadId);
+      // Copy buyer info from linked lead's sale if available
+      if (linkedLeadId && !saleRecord.buyer_email) {
+        const linkedSale = salesToInsert.find((s) => s.lead_id === linkedLeadId && s.buyer_email);
+        if (linkedSale) {
+          saleRecord.buyer_email = linkedSale.buyer_email as string;
+          saleRecord.buyer_phone = linkedSale.buyer_phone as string;
+          saleRecord.buyer_name = linkedSale.buyer_name as string;
+        }
+      }
+
+      salesToInsert.push(saleRecord);
+      trackSaleStats(parsed);
+    }
+
+    console.log(`[import-sales] Pass 1: ${contactRows.length} rows with contact. Pass 2: ${noContactRows.length} rows without contact. Orphans: ${orphanSales}`);
 
     // ── Insert ghost leads first (deduplicated) ────────────────────────────────
     const ghostsToInsert = [...ghostMap.values()];
@@ -664,6 +773,7 @@ Deno.serve(async (req) => {
         ghosts,
         ignored,
         no_contact: noContact,
+        orphan_sales: orphanSales,
         duplicates,
         inserted,
         inserted_paid: insertedPaid,
