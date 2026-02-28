@@ -58,7 +58,9 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { event, phone: rawPhone, email: rawEmail, name, idempotency_key, metadata } = body;
+    const { event, phone: rawPhone, email: rawEmail, name, idempotency_key, metadata,
+            page_url, device, city, region, country, referral_source, form_id,
+            utm_source, utm_medium, utm_campaign, utm_content, utm_term } = body;
 
     const phone = normPhone(rawPhone || "");
     const email = normEmail(rawEmail || "");
@@ -119,10 +121,18 @@ Deno.serve(async (req) => {
           name: name || phone || email,
           source: "webhook",
           metadata: metadata || {},
-          utm_source: metadata?.utm_source || null,
-          utm_campaign: metadata?.utm_campaign || null,
-          utm_content: metadata?.utm_content || null,
-          utm_medium: metadata?.utm_medium || null,
+          page_url: page_url || metadata?.page_url || null,
+          device: device || metadata?.device || null,
+          city: city || metadata?.city || null,
+          region: region || metadata?.region || null,
+          country: country || metadata?.country || null,
+          referral_source: referral_source || metadata?.referral_source || null,
+          form_id: form_id || metadata?.form_id || null,
+          utm_source: utm_source || metadata?.utm_source || null,
+          utm_medium: utm_medium || metadata?.utm_medium || null,
+          utm_campaign: utm_campaign || metadata?.utm_campaign || null,
+          utm_content: utm_content || metadata?.utm_content || null,
+          utm_term: utm_term || metadata?.utm_term || null,
         })
         .select("id")
         .single();

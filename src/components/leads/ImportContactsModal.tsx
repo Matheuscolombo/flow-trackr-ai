@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Upload, FileText, Download, X, CheckCircle, AlertCircle, ChevronRight, Loader2, Check, Tag, Plus, Zap } from "lucide-react";
+import { Upload, FileText, Download, X, CheckCircle, AlertCircle, ChevronRight, Loader2, Check, Tag, Plus, Zap, History } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -83,7 +83,7 @@ interface Props {
   onImport: () => void;
 }
 
-type ImportMode = "funnel" | "event_only";
+type ImportMode = "funnel" | "event_only" | "backfill";
 
 const NONE_VALUE = "__none__";
 const ALL_CAMPAIGNS = "__all__";
@@ -147,6 +147,8 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
     found?: number;
     not_found?: number;
     events_created?: number;
+    created?: number;
+    duplicate_registrations?: number;
   } | null>(null);
 
   // ── Fetch funnels + tags + campaigns on open ──
@@ -319,6 +321,35 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
       }
 
       setResult({ found: accFound, not_found: accNotFound, no_contact: accNoContact, events_created: accEventsCreated });
+    } else if (importMode === "backfill") {
+      let accCreated = 0;
+      let accDuplicateRegs = 0;
+      let accNoContact = 0;
+      let accEventsCreated = 0;
+
+      for (let i = 0; i < batches.length; i++) {
+        setBatchProgress({ current: i + 1, total: batches.length });
+        try {
+          const { data, error } = await supabase.functions.invoke("import-leads", {
+            body: {
+              mode: "backfill",
+              csvText: batches[i],
+              funnelId,
+              stageId,
+              tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
+            },
+          });
+          if (error) { console.error(`[ImportLeads:backfill] batch ${i + 1} error:`, error); continue; }
+          accCreated += data.created ?? 0;
+          accDuplicateRegs += data.duplicate_registrations ?? 0;
+          accNoContact += data.no_contact ?? 0;
+          accEventsCreated += data.events_created ?? 0;
+        } catch (err) {
+          console.error(`[ImportLeads:backfill] batch ${i + 1} threw:`, err);
+        }
+      }
+
+      setResult({ created: accCreated, duplicate_registrations: accDuplicateRegs, no_contact: accNoContact, events_created: accEventsCreated });
     } else {
       let accImported = 0;
       let accDuplicates = 0;
@@ -360,7 +391,7 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
 
   const hasMinimumFields = !!(fieldOverrides["telefone"] || fieldOverrides["email"]);
 
-  const canProcess = importMode === "funnel"
+  const canProcess = importMode === "funnel" || importMode === "backfill"
     ? hasMinimumFields && !!funnelId && !!stageId
     : hasMinimumFields && !!eventName.trim();
 
@@ -450,14 +481,27 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
               <TabsList className="w-full">
                 <TabsTrigger value="funnel" className="flex-1 text-xs gap-1.5">
                   <Upload className="w-3 h-3" />
-                  Importar para funil
+                  Funil
+                </TabsTrigger>
+                <TabsTrigger value="backfill" className="flex-1 text-xs gap-1.5">
+                  <History className="w-3 h-3" />
+                  Backfill
                 </TabsTrigger>
                 <TabsTrigger value="event_only" className="flex-1 text-xs gap-1.5">
                   <Zap className="w-3 h-3" />
-                  Registrar evento
+                  Evento
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            {importMode === "backfill" && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                <p className="text-xs text-amber-300">
+                  <strong>Backfill:</strong> Cada linha vira um evento individual com data/página/dispositivo. 
+                  Cadastros repetidos do mesmo contato são marcados como "cadastro_repetido" com signup_count atualizado.
+                </p>
+              </div>
+            )}
 
             {/* Field mapping */}
             <div className="border border-border rounded-lg overflow-hidden">
@@ -503,7 +547,7 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
             )}
 
             {/* Funnel mode: funnel + stage selectors */}
-            {importMode === "funnel" && (
+            {(importMode === "funnel" || importMode === "backfill") && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Funil de destino</Label>
@@ -659,9 +703,29 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
         {/* ── Step 4: Result ── */}
         {step === "result" && result && (
           <div className="space-y-4">
-            <div className="flex gap-3">
-              {/* Event mode result */}
-              {result.found !== undefined ? (
+            <div className="flex gap-3 flex-wrap">
+              {/* Backfill mode result */}
+              {result.created !== undefined ? (
+                <>
+                  <div className="flex-1 min-w-[100px] rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4 flex flex-col items-center gap-1">
+                    <CheckCircle className="w-6 h-6 text-emerald-400" />
+                    <span className="text-2xl font-bold text-emerald-400">{result.created}</span>
+                    <span className="text-xs text-muted-foreground text-center">novos leads</span>
+                  </div>
+                  <div className="flex-1 min-w-[100px] rounded-lg bg-primary/10 border border-primary/20 p-4 flex flex-col items-center gap-1">
+                    <Zap className="w-6 h-6 text-primary" />
+                    <span className="text-2xl font-bold text-primary">{result.events_created}</span>
+                    <span className="text-xs text-muted-foreground text-center">eventos criados</span>
+                  </div>
+                  {(result.duplicate_registrations ?? 0) > 0 && (
+                    <div className="flex-1 min-w-[100px] rounded-lg bg-amber-500/10 border border-amber-500/20 p-4 flex flex-col items-center gap-1">
+                      <History className="w-6 h-6 text-amber-400" />
+                      <span className="text-2xl font-bold text-amber-400">{result.duplicate_registrations}</span>
+                      <span className="text-xs text-muted-foreground text-center">cadastros repetidos</span>
+                    </div>
+                  )}
+                </>
+              ) : result.found !== undefined ? (
                 <>
                   <div className="flex-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-4 flex flex-col items-center gap-1">
                     <CheckCircle className="w-6 h-6 text-emerald-400" />
