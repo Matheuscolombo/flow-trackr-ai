@@ -865,6 +865,14 @@ export type Database = {
           total_buyers: number
         }[]
       }
+      get_funnel_signup_stats: {
+        Args: { p_funnel_id: string }
+        Returns: {
+          duplicate_signups: number
+          total_signups: number
+          unique_leads: number
+        }[]
+      }
       get_leads_metrics: {
         Args: never
         Returns: {
