@@ -88,6 +88,326 @@ async function authenticateAndGetWorkspace(req: Request) {
   return { supabase, workspaceId: workspace.id };
 }
 
+// ─── Extended synonyms for backfill columns ──────────────────────────────────
+
+const BACKFILL_SYNONYMS: Record<string, string[]> = {
+  email: ["seu e-mail", "email", "e-mail", "e-mail do lead", "customer_email"],
+  telefone: ["whatsapp com ddd", "whatsapp", "telefone", "phone", "fone", "celular", "mobile"],
+  nome: ["nome", "name", "nome completo", "full_name", "customer_name", "nome do lead"],
+  device: ["dispositivo", "device"],
+  page_url: ["url", "page_url", "pagina", "página"],
+  conversion_date: ["data de conversão", "data de conversao", "data_conversao", "conversion_date", "converted_at", "created_at", "data"],
+  country: ["país do usuário", "pais do usuario", "country", "país", "pais"],
+  region: ["região do usuário", "regiao do usuario", "region", "região", "regiao", "estado"],
+  city: ["cidade do usuário", "cidade do usuario", "city", "cidade"],
+  referral_source: ["referral source", "referral_source", "origem"],
+  form_id: ["id do formulário", "id do formulario", "form_id"],
+  utm_source: ["utm source", "utm_source"],
+  utm_medium: ["utm medium", "utm_medium"],
+  utm_campaign: ["utm campaign", "utm_campaign"],
+  utm_content: ["utm content", "utm_content"],
+  utm_term: ["utm term", "utm_term"],
+};
+
+function findBackfillField(headers: string[], fieldKey: string): string | null {
+  const synonyms = BACKFILL_SYNONYMS[fieldKey] || [];
+  for (const header of headers) {
+    const h = header.toLowerCase().trim();
+    if (synonyms.some((s) => h === s)) return header;
+  }
+  for (const header of headers) {
+    const h = header.toLowerCase().trim();
+    if (synonyms.some((s) => s.length >= 4 && (h.includes(s) || s.includes(h)))) return header;
+  }
+  return null;
+}
+
+function getBackfillValue(row: Record<string, string>, fieldKey: string, headers: string[]): string {
+  const header = findBackfillField(headers, fieldKey);
+  return header ? (row[header] || "").trim() : "";
+}
+
+function cleanUtmValue(val: string): string | null {
+  if (!val) return null;
+  // Filter out template placeholders like {utm_source}
+  if (val.startsWith("{") && val.endsWith("}")) return null;
+  return val;
+}
+
+// ─── Mode: backfill ──────────────────────────────────────────────────────────
+
+async function handleBackfill(
+  supabase: ReturnType<typeof createClient>,
+  workspaceId: string,
+  body: Record<string, unknown>
+) {
+  const { csvText, funnelId, stageId, tagIds } = body as {
+    csvText: string;
+    funnelId: string;
+    stageId: string;
+    tagIds?: string[];
+  };
+
+  if (!csvText || !funnelId || !stageId) {
+    return new Response(JSON.stringify({ error: "csvText, funnelId e stageId são obrigatórios" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const firstLine = csvText.split(/\r?\n/)[0]?.replace(/^\uFEFF/, "") || "";
+  const sep = detectSeparator(firstLine);
+  const rows = parseCSV(csvText, sep);
+  const headers = firstLine.split(sep).map((h: string) => h.replace(/^"|"$/g, "").trim());
+
+  if (rows.length === 0) {
+    return new Response(JSON.stringify({ error: "CSV vazio" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Get funnel name
+  const { data: funnelData } = await supabase.from("funnels").select("name").eq("id", funnelId).single();
+  const funnelName = funnelData?.name || "Funil";
+
+  // Sort rows by conversion date (chronological order)
+  const dateField = findBackfillField(headers, "conversion_date");
+  if (dateField) {
+    rows.sort((a, b) => {
+      const da = new Date(a[dateField] || "").getTime() || 0;
+      const db = new Date(b[dateField] || "").getTime() || 0;
+      return da - db;
+    });
+  }
+
+  // Build existing contacts index
+  const { data: existingLeads } = await supabase
+    .from("leads")
+    .select("id, email, phone")
+    .eq("workspace_id", workspaceId);
+
+  const emailIndex: Record<string, string> = {};
+  const phoneIndex: Record<string, string> = {};
+  (existingLeads || []).forEach((l: { id: string; email: string | null; phone: string | null }) => {
+    if (l.email) emailIndex[normEmail(l.email)] = l.id;
+    if (l.phone) phoneIndex[normPhone(l.phone)] = l.id;
+  });
+
+  // Check who is already in the funnel
+  const { data: existingPositions } = await supabase
+    .from("lead_funnel_stages")
+    .select("lead_id")
+    .eq("funnel_id", funnelId);
+  const existingInFunnel = new Set((existingPositions || []).map((p: { lead_id: string }) => p.lead_id));
+
+  // Track occurrences per contact (by phone)
+  const contactOccurrences: Record<string, number> = {};
+
+  let created = 0;
+  let duplicateRegistrations = 0;
+  let noContact = 0;
+  let eventsCreated = 0;
+  const CHUNK = 300;
+
+  const newLeadsBatch: Record<string, unknown>[] = [];
+  const eventsBatch: Record<string, unknown>[] = [];
+  const lfsBatch: Record<string, unknown>[] = [];
+  const tagBatch: Record<string, unknown>[] = [];
+  const signupUpdates: string[] = [];
+
+  for (const row of rows) {
+    const email = normEmail(getBackfillValue(row, "email", headers));
+    const phone = normPhone(getBackfillValue(row, "telefone", headers));
+    const name = getBackfillValue(row, "nome", headers) || null;
+    const device = getBackfillValue(row, "device", headers) || null;
+    const pageUrl = getBackfillValue(row, "page_url", headers) || null;
+    const convDate = getBackfillValue(row, "conversion_date", headers) || null;
+    const country = getBackfillValue(row, "country", headers) || null;
+    const region = getBackfillValue(row, "region", headers) || null;
+    const city = getBackfillValue(row, "city", headers) || null;
+    const referralSource = getBackfillValue(row, "referral_source", headers) || null;
+    const formId = getBackfillValue(row, "form_id", headers) || null;
+    const utmSource = cleanUtmValue(getBackfillValue(row, "utm_source", headers));
+    const utmMedium = cleanUtmValue(getBackfillValue(row, "utm_medium", headers));
+    const utmCampaign = cleanUtmValue(getBackfillValue(row, "utm_campaign", headers));
+    const utmContent = cleanUtmValue(getBackfillValue(row, "utm_content", headers));
+    const utmTerm = cleanUtmValue(getBackfillValue(row, "utm_term", headers));
+
+    if (!email && !phone) { noContact++; continue; }
+    if (email && !email.includes("@")) { noContact++; continue; }
+
+    const contactKey = phone || email;
+    contactOccurrences[contactKey] = (contactOccurrences[contactKey] || 0) + 1;
+    const isFirst = contactOccurrences[contactKey] === 1;
+
+    let leadId = (email && emailIndex[email]) || (phone && phoneIndex[phone]) || null;
+
+    const timestamp = convDate ? new Date(convDate).toISOString() : new Date().toISOString();
+
+    const payload = {
+      phone, email, name, device, page_url: pageUrl,
+      referral_source: referralSource, form_id: formId,
+      country, region, city, funnel_name: funnelName,
+      utm_source: utmSource, utm_medium: utmMedium,
+      utm_campaign: utmCampaign, utm_content: utmContent, utm_term: utmTerm,
+    };
+
+    if (!leadId) {
+      // New lead — create it
+      newLeadsBatch.push({
+        workspace_id: workspaceId,
+        name: name || phone || email,
+        email: email || null,
+        phone: phone || null,
+        source: "import",
+        imported_at: timestamp,
+        device, page_url: pageUrl, country, region, city,
+        referral_source: referralSource, form_id: formId,
+        utm_source: utmSource, utm_medium: utmMedium,
+        utm_campaign: utmCampaign, utm_content: utmContent, utm_term: utmTerm,
+        metadata: { imported: true, backfill: true },
+      });
+      created++;
+    } else if (!isFirst) {
+      // Repeat registration for existing lead
+      duplicateRegistrations++;
+      signupUpdates.push(leadId);
+    }
+
+    // We'll insert events and LFS after creating new leads (need IDs)
+  }
+
+  // Insert new leads
+  for (let i = 0; i < newLeadsBatch.length; i += CHUNK) {
+    const chunk = newLeadsBatch.slice(i, i + CHUNK);
+    const { data: createdLeads } = await supabase
+      .from("leads")
+      .insert(chunk)
+      .select("id, email, phone");
+    (createdLeads || []).forEach((l: { id: string; email: string | null; phone: string | null }) => {
+      if (l.email) emailIndex[normEmail(l.email)] = l.id;
+      if (l.phone) phoneIndex[normPhone(l.phone)] = l.id;
+    });
+  }
+
+  // Second pass: create events and LFS entries
+  const contactOccurrences2: Record<string, number> = {};
+  for (const row of rows) {
+    const email = normEmail(getBackfillValue(row, "email", headers));
+    const phone = normPhone(getBackfillValue(row, "telefone", headers));
+    if (!email && !phone) continue;
+    if (email && !email.includes("@")) continue;
+
+    const contactKey = phone || email;
+    contactOccurrences2[contactKey] = (contactOccurrences2[contactKey] || 0) + 1;
+    const isFirst = contactOccurrences2[contactKey] === 1;
+
+    const leadId = (email && emailIndex[email]) || (phone && phoneIndex[phone]) || null;
+    if (!leadId) continue;
+
+    const name = getBackfillValue(row, "nome", headers) || null;
+    const device = getBackfillValue(row, "device", headers) || null;
+    const pageUrl = getBackfillValue(row, "page_url", headers) || null;
+    const convDate = getBackfillValue(row, "conversion_date", headers) || null;
+    const country = getBackfillValue(row, "country", headers) || null;
+    const region = getBackfillValue(row, "region", headers) || null;
+    const city = getBackfillValue(row, "city", headers) || null;
+    const referralSource = getBackfillValue(row, "referral_source", headers) || null;
+    const utmSource = cleanUtmValue(getBackfillValue(row, "utm_source", headers));
+    const utmMedium = cleanUtmValue(getBackfillValue(row, "utm_medium", headers));
+    const utmCampaign = cleanUtmValue(getBackfillValue(row, "utm_campaign", headers));
+    const utmContent = cleanUtmValue(getBackfillValue(row, "utm_content", headers));
+    const utmTerm = cleanUtmValue(getBackfillValue(row, "utm_term", headers));
+    const timestamp = convDate ? new Date(convDate).toISOString() : new Date().toISOString();
+
+    const payload = {
+      phone, email, name, device, page_url: pageUrl,
+      referral_source: referralSource, country, region, city,
+      funnel_name: funnelName,
+      utm_source: utmSource, utm_medium: utmMedium,
+      utm_campaign: utmCampaign, utm_content: utmContent, utm_term: utmTerm,
+    };
+
+    eventsBatch.push({
+      lead_id: leadId,
+      funnel_id: funnelId,
+      event_name: isFirst ? "pagina_cadastro" : "cadastro_repetido",
+      source: "import",
+      payload_raw: payload,
+      timestamp_event: timestamp,
+    });
+    eventsCreated++;
+
+    // Place in funnel (only first occurrence)
+    if (isFirst && !existingInFunnel.has(leadId)) {
+      lfsBatch.push({
+        lead_id: leadId,
+        funnel_id: funnelId,
+        stage_id: stageId,
+        moved_by: "import",
+        source: "import",
+        entered_at: timestamp,
+      });
+      existingInFunnel.add(leadId);
+    }
+
+    // Tags (only first occurrence)
+    if (isFirst && tagIds && Array.isArray(tagIds)) {
+      for (const tagId of tagIds) {
+        tagBatch.push({ lead_id: leadId, tag_id: tagId });
+      }
+    }
+  }
+
+  // Insert events
+  for (let i = 0; i < eventsBatch.length; i += CHUNK) {
+    await supabase.from("lead_events").insert(eventsBatch.slice(i, i + CHUNK));
+  }
+
+  // Insert LFS
+  for (let i = 0; i < lfsBatch.length; i += CHUNK) {
+    await supabase.from("lead_funnel_stages")
+      .upsert(lfsBatch.slice(i, i + CHUNK), { onConflict: "lead_id,funnel_id", ignoreDuplicates: true });
+  }
+
+  // Insert tags
+  if (tagBatch.length > 0) {
+    for (let i = 0; i < tagBatch.length; i += CHUNK) {
+      await supabase.from("lead_tags")
+        .upsert(tagBatch.slice(i, i + CHUNK), { onConflict: "lead_id,tag_id", ignoreDuplicates: true });
+    }
+  }
+
+  // Update signup_count for duplicates
+  const uniqueSignupUpdates = [...new Set(signupUpdates)];
+  for (const lid of uniqueSignupUpdates) {
+    // Count occurrences for this lead
+    const count = Object.entries(contactOccurrences).reduce((acc, [key, cnt]) => {
+      const leadForKey = (emailIndex[key] || phoneIndex[key]);
+      return leadForKey === lid ? acc + cnt : acc;
+    }, 0);
+    if (count > 1) {
+      await supabase.from("leads").update({
+        signup_count: count,
+        last_signup_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", lid);
+    }
+  }
+
+  console.log(`[import-leads:backfill] created=${created} duplicateRegs=${duplicateRegistrations} events=${eventsCreated} noContact=${noContact}`);
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      created,
+      duplicate_registrations: duplicateRegistrations,
+      events_created: eventsCreated,
+      no_contact: noContact,
+    }),
+    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+
 // ─── Mode: event_only ────────────────────────────────────────────────────────
 
 async function handleEventOnly(
@@ -453,6 +773,10 @@ Deno.serve(async (req) => {
 
     if (mode === "event_only") {
       return await handleEventOnly(supabase, workspaceId, body);
+    }
+
+    if (mode === "backfill") {
+      return await handleBackfill(supabase, workspaceId, body);
     }
 
     return await handleFunnelImport(supabase, workspaceId, body);
