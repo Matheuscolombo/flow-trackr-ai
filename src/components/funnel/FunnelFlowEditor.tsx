@@ -462,6 +462,7 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
           onMoveEnd={onMoveEnd}
           nodeTypes={nodeTypes}
           deleteKeyCode={["Backspace", "Delete"]}
+          connectionRadius={40}
           fitView={!savedViewport}
           fitViewOptions={{ padding: 0.15, minZoom: 0.6, maxZoom: 1.2 }}
           defaultViewport={savedViewport ?? { x: 0, y: 0, zoom: 0.85 }}
