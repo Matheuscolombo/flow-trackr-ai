@@ -50,6 +50,8 @@ interface CustomEdge {
   funnel_id: string;
   source_node_id: string;
   target_node_id: string;
+  source_handle: string | null;
+  target_handle: string | null;
 }
 
 interface Props {
@@ -209,7 +211,6 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
           source: rule.from_stage_id!,
           target: rule.to_stage_id,
           label: `${rule.event_name} (${pct}%)`,
-          type: "smoothstep",
           animated: true,
           style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
           labelStyle: { fontSize: 10, fill: "hsl(var(--muted-foreground))" },
@@ -228,7 +229,6 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
         source: sn.id,
         target: sn.connected_stage_id!,
         label: `${sn.lead_count}`,
-        type: "smoothstep",
         animated: true,
         style: { stroke: "hsl(var(--muted-foreground))", strokeWidth: 1.5, strokeDasharray: "5 3" },
         labelStyle: { fontSize: 10, fill: "hsl(var(--muted-foreground))", fontWeight: 600 },
@@ -238,12 +238,13 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
         markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--muted-foreground))" },
       }));
 
-    // Custom user-drawn edges
+    // Custom user-drawn edges — preserve sourceHandle/targetHandle
     const userEdges: Edge[] = customEdges.map((ce) => ({
       id: ce.id,
       source: ce.source_node_id,
       target: ce.target_node_id,
-      type: "smoothstep",
+      sourceHandle: ce.source_handle ?? undefined,
+      targetHandle: ce.target_handle ?? undefined,
       animated: true,
       style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
       markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--primary))" },
@@ -259,13 +260,15 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
     (connection: Connection) => {
       if (!connection.source || !connection.target) return;
 
-      // Persist edge to funnel_edges table
+      // Persist edge to funnel_edges table (with handle info)
       supabase
         .from("funnel_edges" as any)
         .insert({
           funnel_id: funnelId,
           source_node_id: connection.source,
           target_node_id: connection.target,
+          source_handle: connection.sourceHandle ?? null,
+          target_handle: connection.targetHandle ?? null,
         } as any)
         .select()
         .single()
@@ -302,7 +305,6 @@ function FunnelFlowEditorInner({ stages, rules, stageCounts, funnelId }: Props) 
         addEdge(
           {
             ...connection,
-            type: "smoothstep",
             animated: true,
             style: { stroke: "hsl(var(--primary))", strokeWidth: 2 },
             markerEnd: { type: MarkerType.ArrowClosed, color: "hsl(var(--primary))" },
