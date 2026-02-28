@@ -1,24 +1,20 @@
 
 
-## Plano: Mostrar primeira dobra mobile iOS nas thumbnails
+## Problema
 
-O objetivo é ajustar a captura e exibição da thumbnail para mostrar exatamente a "primeira dobra" (above the fold) de um iPhone — a área visível sem rolar.
+O `object-cover` corta a imagem para preencher o container — se o card renderizar ligeiramente menor que a imagem (240px vs 260px), ele corta as laterais. Isso é o que está cortando o texto na direita.
 
-### Mudanças
+## Solução
 
-1. **`FunnelFlowNode.tsx`** — Duas alterações:
-   - **URL do thum.io**: Adicionar o parâmetro `crop/480` para que o serviço retorne apenas a parte superior da página (primeira dobra), em vez da página inteira redimensionada. O viewport já está configurado como 390x844 (iPhone), então o crop cortará a área visível inicial.
-   - **Altura do container**: Aumentar de `h-[160px]` para `h-[200px]` para dar mais espaço à primeira dobra e mostrar mais conteúdo útil da página.
-   - **Remover gradient overlay** parcialmente para não escurecer tanto o conteúdo da thumbnail.
+Trocar para `object-contain object-top` no `<img>` da thumbnail. Isso garante que a imagem inteira seja exibida sem corte nenhum, alinhada ao topo do container. O fundo escuro preenche qualquer espaço sobrando.
 
-A URL passaria de:
+### Alteração em `src/components/funnel/FunnelFlowNode.tsx`
+
+**Linha 47** — trocar a classe da imagem:
 ```
-https://image.thum.io/get/width/480/viewportWidth/390/viewportHeight/844/{url}
-```
-Para:
-```
-https://image.thum.io/get/width/480/crop/600/viewportWidth/390/viewportHeight/844/{url}
+- className="w-full h-full object-cover object-center"
++ className="w-full h-full object-contain object-top"
 ```
 
-O `crop/600` instrui o thum.io a capturar apenas os primeiros 600px de altura da página (equivalente à primeira dobra no iPhone), resultando numa imagem mais focada no conteúdo acima da dobra.
+Isso resolve de vez: a imagem é redimensionada para caber inteira dentro do container, mantendo centralização horizontal e alinhamento ao topo, sem cortar nada nas laterais.
 
