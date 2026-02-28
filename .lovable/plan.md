@@ -1,25 +1,38 @@
 
 
-## Adicionar origem nos eventos da timeline
+## Adicionar campo de URL (page_url) nas etapas do funil
 
 ### Problema
-Os eventos na timeline nao mostram a origem/source de cada evento. Quando o lead participa de varios funis (ex: "funil api", "funil hot"), nao da pra saber de qual funil veio cada evento.
+As etapas do funil nao tem um campo para associar a URL/pagina correspondente (ex: link da LP, link do grupo, link da live). Isso impede de mostrar a origem/pagina na timeline do lead quando ele entra numa etapa.
 
-### Alteracao
+### Alteracoes
 
-**Arquivo:** `src/components/funnel/LeadTimeline.tsx`
+#### 1. Migracao: adicionar coluna `page_url` na tabela `funnel_stages`
 
-Na secao `TimelineEvents`, ao renderizar cada evento real e sintetico, adicionar uma badge com a **source** do evento (ex: `import`, `webhook`, `api`) e, para eventos `signup`/`re_signup`, mostrar o nome do funil no `detail`.
+```sql
+ALTER TABLE public.funnel_stages 
+ADD COLUMN page_url text DEFAULT NULL;
+```
 
-Especificamente:
+#### 2. Tela de Configuracao (aba Config do FunnelDetailPage)
 
-1. **Eventos reais (`type: "real"`)**: Adicionar badge com `ev.realEvent.source` (ja disponivel no objeto `LeadEvent`) ao lado do label do evento na timeline.
+Na listagem de etapas (linhas 608-614), tornar editavel: adicionar um campo de input para `page_url` em cada etapa, com placeholder "https://..." e um icone de link. Mostrar badge "Evento" quando nao tem URL e badge "Pagina" quando tem.
 
-2. **Evento "Lead cadastrado" sintetico**: Ja mostra `via ${lead.source}` — manter como esta.
+Adicionar botao de salvar alteracoes nas etapas (salva os page_url de todas as etapas de uma vez via update).
 
-3. **Eventos signup/re_signup**: Manter o nome do funil no detail (ja existe para signup via `payload_raw.funnel_name`) e adicionar badge de source.
+#### 3. FunnelBuilder (criacao de novo funil)
 
-4. Na renderizacao da timeline (linhas 611-631), adicionar a badge de source para eventos do tipo `real`:
-   - Exibir `ev.realEvent.source` como badge colorida usando o mapa `sourceColors` existente
-   - Posicionar ao lado do label, antes do timeDiff
+Adicionar campo `page_url` opcional em cada etapa no builder. O campo aparece inline na row da etapa, com placeholder "Link da pagina (opcional)".
+
+Passar `page_url` no insert das stages na FunnelBuilderPage.
+
+#### 4. Tipos
+
+Atualizar `FunnelStage` em `src/types/index.ts` para incluir `page_url: string | null`.
+
+### Fluxo do usuario
+- Na aba Configuracao, cada etapa mostra o nome + campo editavel de URL
+- Etapas como "Cadastrou LP" recebem o link da landing page
+- Etapas como "Pix Gerado" ficam sem URL (apenas evento)
+- O campo `page_url` fica disponivel para uso futuro na timeline (mostrar origem do lead)
 
