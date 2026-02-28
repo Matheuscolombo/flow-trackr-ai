@@ -137,6 +137,7 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
 
   // Processing state
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [processedLeads, setProcessedLeads] = useState(0);
 
   // Result
   const [result, setResult] = useState<{
@@ -208,6 +209,7 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
     setEventName("");
     setCampaignId(ALL_CAMPAIGNS);
     setBatchProgress({ current: 0, total: 0 });
+    setProcessedLeads(0);
     setResult(null);
   };
 
@@ -285,6 +287,7 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
     setStep("processing");
     const batches = splitCSVIntoBatches(csvText);
     setBatchProgress({ current: 0, total: batches.length });
+    setProcessedLeads(0);
 
     const cleanOverrides: Record<string, string> = {};
     for (const [key, val] of Object.entries(fieldOverrides)) {
@@ -310,13 +313,15 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
               tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
             },
           });
-          if (error) { console.error(`[ImportLeads:event] batch ${i + 1} error:`, error); continue; }
+          if (error) { console.error(`[ImportLeads:event] batch ${i + 1} error:`, error); setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount)); continue; }
           accFound += data.found ?? 0;
           accNotFound += data.not_found ?? 0;
           accNoContact += data.no_contact ?? 0;
           accEventsCreated += data.events_created ?? 0;
+          setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount));
         } catch (err) {
           console.error(`[ImportLeads:event] batch ${i + 1} threw:`, err);
+          setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount));
         }
       }
 
@@ -339,13 +344,15 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
               tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
             },
           });
-          if (error) { console.error(`[ImportLeads:backfill] batch ${i + 1} error:`, error); continue; }
+          if (error) { console.error(`[ImportLeads:backfill] batch ${i + 1} error:`, error); setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount)); continue; }
           accCreated += data.created ?? 0;
           accDuplicateRegs += data.duplicate_registrations ?? 0;
           accNoContact += data.no_contact ?? 0;
           accEventsCreated += data.events_created ?? 0;
+          setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount));
         } catch (err) {
           console.error(`[ImportLeads:backfill] batch ${i + 1} threw:`, err);
+          setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount));
         }
       }
 
@@ -368,13 +375,15 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
               tagIds: selectedTagIds.length > 0 ? selectedTagIds : undefined,
             },
           });
-          if (error) { console.error(`[ImportLeads] batch ${i + 1} error:`, error); continue; }
+          if (error) { console.error(`[ImportLeads] batch ${i + 1} error:`, error); setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount)); continue; }
           accImported += data.imported ?? 0;
           accDuplicates += data.duplicates ?? 0;
           accDuplicatesUpdated += data.duplicates_updated ?? 0;
           accNoContact += data.no_contact ?? 0;
+          setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount));
         } catch (err) {
           console.error(`[ImportLeads] batch ${i + 1} threw:`, err);
+          setProcessedLeads(Math.min((i + 1) * BATCH_SIZE, lineCount));
         }
       }
 
@@ -690,12 +699,15 @@ export function ImportContactsModal({ open, onClose, onImport }: Props) {
               <p className="text-sm font-medium text-foreground">
                 {importMode === "event_only" ? "Registrando eventos..." : "Importando leads..."}
               </p>
-              <p className="text-xs text-muted-foreground">
-                Batch {batchProgress.current} de {batchProgress.total}
+              <p className="text-lg font-bold tabular-nums text-foreground">
+                {processedLeads.toLocaleString("pt-BR")} <span className="text-muted-foreground font-normal text-sm">de</span> {lineCount.toLocaleString("pt-BR")}
+              </p>
+              <p className="text-[10px] text-muted-foreground">
+                Lote {batchProgress.current} de {batchProgress.total}
               </p>
             </div>
-            {batchProgress.total > 0 && (
-              <Progress value={(batchProgress.current / batchProgress.total) * 100} className="h-2" />
+            {lineCount > 0 && (
+              <Progress value={(processedLeads / lineCount) * 100} className="h-2" />
             )}
           </div>
         )}
