@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Plus, Trash2, GripVertical, Copy, Check, ExternalLink } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -153,16 +154,27 @@ export function FunnelBuilder({ onSave }: FunnelBuilderProps) {
                 onChange={(e) => updateStageName(stage.id, e.target.value)}
                 className="h-7 text-xs bg-transparent border-0 p-0 focus-visible:ring-0 flex-1"
               />
-              <div className="flex gap-1 flex-wrap max-w-[120px] justify-end">
-                {STAGE_COLORS.map((c) => (
+              <Popover>
+                <PopoverTrigger asChild>
                   <button
-                    key={c}
-                    className={`w-3.5 h-3.5 rounded-full transition-transform ${stage.color === c ? "scale-125 ring-1 ring-offset-1 ring-offset-background ring-foreground/50" : "hover:scale-110"}`}
-                    style={{ backgroundColor: c }}
-                    onClick={() => updateStageColor(stage.id, c)}
+                    className="w-6 h-6 rounded-full border-2 border-border hover:border-foreground/50 transition-colors shrink-0"
+                    style={{ backgroundColor: stage.color }}
+                    title="Trocar cor"
                   />
-                ))}
-              </div>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-2" align="end" side="top">
+                  <div className="grid grid-cols-8 gap-1.5">
+                    {STAGE_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        className={`w-5 h-5 rounded-full transition-transform ${stage.color === c ? "scale-110 ring-2 ring-offset-1 ring-offset-background ring-primary" : "hover:scale-110"}`}
+                        style={{ backgroundColor: c }}
+                        onClick={() => updateStageColor(stage.id, c)}
+                      />
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Button
                 size="icon"
                 variant="ghost"
