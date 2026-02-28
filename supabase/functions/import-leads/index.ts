@@ -811,28 +811,46 @@ async function handleFunnelImport(
   }
 
   // Update signup_count and create lead_events for re-signups
-  const allLeadUpdates: { id: string; count: number; timestamps: string[] }[] = [];
+  const allLeadUpdates: { id: string; count: number; timestamps: string[]; isDuplicate: boolean }[] = [];
+  const duplicateIdSet = new Set(duplicateLeadIds);
   for (const [contactKey, signupData] of signupCountByContact.entries()) {
     const leadId = (emailIndex[contactKey]) || (phoneIndex[contactKey]) || null;
     if (!leadId) continue;
-    allLeadUpdates.push({ id: leadId, count: signupData.count, timestamps: signupData.timestamps });
+    allLeadUpdates.push({ id: leadId, count: signupData.count, timestamps: signupData.timestamps, isDuplicate: duplicateIdSet.has(leadId) });
   }
-  // Also handle leads already in funnel that weren't in signupCountByContact
-  const uniqueDuplicateIds = [...new Set(duplicateLeadIds)];
 
   let eventsCreated = 0;
   const eventRows: Record<string, unknown>[] = [];
   for (const upd of allLeadUpdates) {
-    // Update signup_count
     const lastTs = upd.timestamps.length > 1 ? upd.timestamps[upd.timestamps.length - 1] : null;
-    await supabase
-      .from("leads")
-      .update({
-        signup_count: upd.count,
-        last_signup_at: lastTs ? new Date(lastTs.replace(" ", "T")).toISOString() : null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", upd.id);
+    if (upd.isDuplicate && upd.count > 0) {
+      // For leads already in funnel (cross-batch duplicates): INCREMENT signup_count
+      // Use raw SQL to atomically increment
+      const incrementBy = upd.count - 1; // -1 because original signup already counted
+      if (incrementBy > 0) {
+        await supabase.rpc("increment_signup_count", { p_lead_id: upd.id });
+        // If more than 1 extra signup, call multiple times or use direct SQL
+        for (let extra = 1; extra < incrementBy; extra++) {
+          await supabase.rpc("increment_signup_count", { p_lead_id: upd.id });
+        }
+      }
+      if (lastTs) {
+        await supabase
+          .from("leads")
+          .update({ last_signup_at: new Date(lastTs.replace(" ", "T")).toISOString(), updated_at: new Date().toISOString() })
+          .eq("id", upd.id);
+      }
+    } else {
+      // For new leads: SET signup_count directly
+      await supabase
+        .from("leads")
+        .update({
+          signup_count: upd.count,
+          last_signup_at: lastTs ? new Date(lastTs.replace(" ", "T")).toISOString() : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", upd.id);
+    }
 
     // Create lead_events for each re-signup (skip the first one = original signup)
     if (upd.count > 1) {
