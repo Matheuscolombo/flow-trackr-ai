@@ -1,33 +1,34 @@
 
 
-## Adicionar Ordenação ao Catálogo de Produtos
+## Melhorias: Tags existentes + Registro de duplicados
 
-Adicionar um dropdown/select de ordenação ao lado dos filtros existentes no `ProductCardGrid.tsx`.
+### 1. Tags existentes no importador
 
-### Opções de ordenação
-1. **Nome (A-Z)** — padrão atual
-2. **Nome (Z-A)**
-3. **Receita (maior → menor)**
-4. **Receita (menor → maior)**
-5. **Vendas (maior → menor)**
-6. **Vendas (menor → maior)**
-7. **Mais recente** (created_at desc)
-8. **Mais vínculos** (quantidade de mappings desc)
+O código já busca tags do banco e lista como chips clicáveis. Porém, há um filtro em `availableTags` (linha 188) que só mostra tags `global` ou do funil selecionado. No modo "Registrar evento", como `funnelId` pode estar vazio, quase nenhuma tag aparece.
 
-### Implementação
+**Correção em `ImportContactsModal.tsx`:**
+- No modo `event_only`, mostrar TODAS as tags (sem filtro por funil)
+- Adicionar uma seção visual separando "Tags existentes" das que o usuário pode criar
+- Manter o input "Nova tag..." como está
 
-**Arquivo:** `src/components/products/ProductCardGrid.tsx`
+### 2. Registro de tentativas duplicadas (signup_count)
 
-- Adicionar estado `sortBy` com as opções acima
-- Adicionar um `<Select>` compacto ao lado da barra de busca e filtros de plataforma
-- Aplicar `.sort()` no array `filtered` antes do render, usando `catalogStats` para ordenar por receita/vendas
-- Ícone `ArrowUpDown` do lucide no trigger do select
+Atualmente, duplicados são apenas contados e descartados. A ideia é registrar cada tentativa de cadastro duplicado como dado útil para scoring futuro.
 
-### Layout da barra de filtros (atualizado)
+**Mudanças no banco de dados:**
+- Adicionar coluna `signup_count` (integer, default 1) na tabela `leads`
+- Adicionar coluna `last_signup_at` (timestamp) na tabela `leads`
 
-```text
-[🔍 Buscar produto...        ] [Ordenar: Receita ↓ ▾] [Todos] [Eduzz] [Hotmart]
-```
+**Mudanças na edge function `import-leads/index.ts`:**
+- Quando um lead duplicado é encontrado (já existe no funil), incrementar `signup_count` e atualizar `last_signup_at` ao invés de simplesmente ignorar
+- Retornar no resultado: `duplicates_updated` para indicar quantos foram atualizados
 
-Nenhuma mudança em hooks ou banco de dados — apenas lógica de sort no frontend.
+**Mudanças no frontend (`ImportContactsModal.tsx`):**
+- Na tela de resultado, ao invés de só "166 duplicados", mostrar algo como "166 duplicados atualizados (contagem de cadastros incrementada)"
+- Texto explicativo: "Leads que se cadastraram mais de uma vez têm o contador atualizado"
+
+### Arquivos modificados
+1. **Migração SQL** — adicionar `signup_count` e `last_signup_at` em `leads`
+2. **`supabase/functions/import-leads/index.ts`** — incrementar signup_count para duplicados
+3. **`src/components/leads/ImportContactsModal.tsx`** — corrigir filtro de tags + atualizar tela de resultado
 
