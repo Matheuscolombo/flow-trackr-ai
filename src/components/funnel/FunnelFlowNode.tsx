@@ -19,7 +19,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
   const [imgError, setImgError] = useState(false);
 
   // Auto-generate thumbnail from page_url if no custom thumbnail is set
-  const effectiveThumb = thumbnailUrl || (pageUrl ? `https://image.thum.io/get/width/600/${pageUrl}` : null);
+  const effectiveThumb = thumbnailUrl || (pageUrl ? `https://image.thum.io/get/width/480/viewportWidth/390/viewportHeight/844/${pageUrl}` : null);
   const showThumbnail = isPage && effectiveThumb && !imgError;
 
   return (
