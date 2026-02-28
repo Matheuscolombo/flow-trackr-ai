@@ -9,6 +9,8 @@ import type { FunnelStage, StageTransitionRule } from "@/types";
 const STAGE_COLORS = [
   "#3B82F6", "#8B5CF6", "#F59E0B", "#EC4899",
   "#10B981", "#EF4444", "#6366F1", "#14B8A6",
+  "#F97316", "#84CC16", "#06B6D4", "#A855F7",
+  "#E11D48", "#0EA5E9", "#D946EF", "#FACC15",
 ];
 
 interface NewStage {
@@ -151,11 +153,11 @@ export function FunnelBuilder({ onSave }: FunnelBuilderProps) {
                 onChange={(e) => updateStageName(stage.id, e.target.value)}
                 className="h-7 text-xs bg-transparent border-0 p-0 focus-visible:ring-0 flex-1"
               />
-              <div className="flex gap-1">
-                {STAGE_COLORS.slice(0, 4).map((c) => (
+              <div className="flex gap-1 flex-wrap max-w-[120px] justify-end">
+                {STAGE_COLORS.map((c) => (
                   <button
                     key={c}
-                    className={`w-3.5 h-3.5 rounded-full transition-transform ${stage.color === c ? "scale-125" : "hover:scale-110"}`}
+                    className={`w-3.5 h-3.5 rounded-full transition-transform ${stage.color === c ? "scale-125 ring-1 ring-offset-1 ring-offset-background ring-foreground/50" : "hover:scale-110"}`}
                     style={{ backgroundColor: c }}
                     onClick={() => updateStageColor(stage.id, c)}
                   />
