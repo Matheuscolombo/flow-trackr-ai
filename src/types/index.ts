@@ -164,6 +164,8 @@ export interface Lead {
   is_subscriber?: boolean;
   ltv_days?: number | null;
   imported_at?: string | null;
+  signup_count?: number;
+  last_signup_at?: string | null;
 }
 
 export interface LeadEvent {

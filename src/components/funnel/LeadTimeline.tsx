@@ -709,6 +709,12 @@ export function LeadTimeline({ lead, open, onClose }: LeadTimelineProps) {
             }`} variant="outline">
               {lead.source}
             </Badge>
+            {(lead.signup_count ?? 1) > 1 && (
+              <Badge className="text-[10px] bg-yellow-500/15 text-yellow-400 border-yellow-500/30" variant="outline">
+                <UserPlus className="w-2.5 h-2.5 mr-1" />
+                {lead.signup_count}x cadastros
+              </Badge>
+            )}
             <span className="text-[10px] text-muted-foreground">{lead.primary_funnel_name}</span>
           </div>
         </div>
