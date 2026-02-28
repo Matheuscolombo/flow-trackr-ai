@@ -44,7 +44,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
             <img
               src={effectiveThumb!}
               alt={label}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover object-top"
               onError={() => setImgError(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-card/80 to-transparent" />
