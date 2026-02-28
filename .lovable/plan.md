@@ -1,16 +1,24 @@
 
 
-## Plan: Expandir área de conexão dos nós
+## Plano: Mostrar primeira dobra mobile iOS nas thumbnails
 
-O objetivo é permitir que o usuário arraste uma conexão e solte em qualquer lugar do card, sem precisar acertar exatamente na bolinha (handle).
+O objetivo é ajustar a captura e exibição da thumbnail para mostrar exatamente a "primeira dobra" (above the fold) de um iPhone — a área visível sem rolar.
 
-### Mudanças técnicas
+### Mudanças
 
-1. **`FunnelFlowNode.tsx`** — Aumentar os handles para cobrir o card inteiro usando handles invisíveis que ocupam toda a área do nó (width/height 100%, opacity 0) além dos handles visuais pequenos existentes.
+1. **`FunnelFlowNode.tsx`** — Duas alterações:
+   - **URL do thum.io**: Adicionar o parâmetro `crop/480` para que o serviço retorne apenas a parte superior da página (primeira dobra), em vez da página inteira redimensionada. O viewport já está configurado como 390x844 (iPhone), então o crop cortará a área visível inicial.
+   - **Altura do container**: Aumentar de `h-[160px]` para `h-[200px]` para dar mais espaço à primeira dobra e mostrar mais conteúdo útil da página.
+   - **Remover gradient overlay** parcialmente para não escurecer tanto o conteúdo da thumbnail.
 
-2. **`TrafficSourceNode.tsx`** — Mesma abordagem: adicionar handles invisíveis de área completa sobrepostos ao card, mantendo os handles visuais pequenos como indicadores.
+A URL passaria de:
+```
+https://image.thum.io/get/width/480/viewportWidth/390/viewportHeight/844/{url}
+```
+Para:
+```
+https://image.thum.io/get/width/480/crop/600/viewportWidth/390/viewportHeight/844/{url}
+```
 
-3. **`FunnelFlowEditor.tsx`** — Adicionar `connectionRadius={40}` no ReactFlow para aumentar o raio de snap da conexão, facilitando a detecção do nó alvo.
-
-A técnica é ter dois conjuntos de handles por posição: um visual (pequeno, visível) e um funcional (grande/invisível, cobrindo o card). Isso permite que o React Flow detecte a conexão ao soltar em qualquer parte do nó.
+O `crop/600` instrui o thum.io a capturar apenas os primeiros 600px de altura da página (equivalente à primeira dobra no iPhone), resultando numa imagem mais focada no conteúdo acima da dobra.
 
