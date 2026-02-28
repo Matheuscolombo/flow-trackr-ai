@@ -602,7 +602,7 @@ const FunnelDetailPage = () => {
         )}
 
         {activeTab === "config" && (
-          <FunnelConfigTab stages={stages} rules={rules} />
+          <FunnelConfigTab stages={stages} rules={rules} funnelId={funnel.id} />
         )}
 
         {activeTab === "webhook" && (
