@@ -17,7 +17,10 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
   const { label, color, count, pageUrl, thumbnailUrl } = data as unknown as FlowNodeData;
   const isPage = !!pageUrl;
   const [imgError, setImgError] = useState(false);
-  const showThumbnail = isPage && thumbnailUrl && !imgError;
+
+  // Auto-generate thumbnail from page_url if no custom thumbnail is set
+  const effectiveThumb = thumbnailUrl || (pageUrl ? `https://image.thum.io/get/width/400/${pageUrl}` : null);
+  const showThumbnail = isPage && effectiveThumb && !imgError;
 
   return (
     <div className="relative group">
@@ -33,7 +36,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
         {showThumbnail ? (
           <div className="w-full h-[120px] bg-muted/30 relative overflow-hidden">
             <img
-              src={thumbnailUrl}
+              src={effectiveThumb!}
               alt={label}
               className="w-full h-full object-cover"
               onError={() => setImgError(true)}
