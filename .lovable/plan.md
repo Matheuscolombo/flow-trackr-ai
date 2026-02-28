@@ -1,42 +1,35 @@
 
 
-## Diagnóstico Atual
+## Problema Identificado
 
-A aplicação **já está 100% conectada ao banco de dados**. Todas as páginas (Dashboard, Leads, Funis, Campanhas) fazem queries reais via Supabase. O arquivo `mock.ts` existe mas é praticamente **não utilizado** — apenas uma função auxiliar em `FunnelChart.tsx` importa dele.
+Na linha 317 do importador:
+```typescript
+if (!parsed.email && !parsed.phone) { noContact++; ignored++; continue; }
+```
 
-O banco já tem a estrutura completa:
-- 12 tabelas criadas com RLS configurado
-- 8 database functions (RPCs) funcionando
-- 1 workspace + 1 campanha + 1 funil "Base de Compradores" criados automaticamente pelo login
+Linhas sem email/telefone são descartadas. Mas essas linhas podem ser:
+- **Order bumps** (produto adicional no mesmo pedido)
+- **Renovações de assinatura** (plataforma não repete dados do comprador)
+- **Upsells** vinculados ao mesmo invoice
 
-**O problema não é migração de código — é que o banco está vazio.**
+Isso explica a diferença: R$ 981.839 importados vs R$ 1.037.946 esperados = **~R$ 56k perdidos**.
 
-## Plano de Ação
+## Solução
 
-### 1. Remover dependência do mock.ts
-- Eliminar o import de `getConversionRate` em `FunnelChart.tsx` e implementar o cálculo inline
-- O arquivo `mock.ts` pode ser deletado inteiramente depois
+Quando uma linha não tem email/telefone, ao invés de ignorar, tentar vincular pelo `external_invoice_id` (fatura/pedido) a uma venda que já tem lead vinculado. Plataformas como Hotmart e Eduzz usam o mesmo número de pedido para o produto principal e os bumps.
 
-### 2. Popular dados via importação
-A plataforma já tem os importadores prontos:
-- **Importar Vendas** (Eduzz/Hotmart) → cria leads + sale_events automaticamente
-- **Importar Leads** (CSV genérico) → cria leads em funis específicos
+### Mudanças no `import-sales/index.ts`
 
-Basta usar as planilhas reais do seu negócio.
+1. **Remover o `continue` da linha 317** — não descartar linhas sem contato
+2. **Criar um segundo passo**: após processar todas as linhas com contato, voltar nas linhas sem contato e tentar vincular por invoice prefix ou por posição (linha anterior no CSV geralmente é o pedido principal)
+3. **Estratégia de fallback**: se a linha sem contato tem o mesmo `external_invoice_id` base (ex: `12345` e `12345-bump`), vincular ao mesmo lead. Se não, usar o buyer_email/phone da linha anterior no CSV como fallback (padrão comum em exports de plataforma)
+4. **Último recurso**: criar a venda como "órfã" (`lead_id = null`) para não perder receita — pelo menos aparece nos totais
 
-### 3. Sobre "migrar para Supabase externo"
-Conforme discutido anteriormente, este projeto roda no Lovable Cloud. Os dados já estão no banco — a infraestrutura é a mesma tecnologia. Não há necessidade de migração técnica.
+### Mudança na RPC `get_leads_metrics`
 
----
+Incluir vendas órfãs (sem lead_id) no total de receita, somando diretamente de `sale_events` ao invés de depender do campo `total_revenue` da tabela `leads`.
 
-### Seção Técnica
+### Resultado Esperado
 
-**Arquivo: `src/components/funnel/FunnelChart.tsx`**
-- Remover `import { getConversionRate } from "@/data/mock"`
-- Substituir por cálculo local: `(conversions / totalLeads * 100)`
-
-**Arquivo: `src/data/mock.ts`**
-- Deletar inteiramente (nenhum outro arquivo depende dele)
-
-**Resultado:** aplicação 100% limpa, sem dados fake, pronta para receber dados reais via importadores existentes.
+Após reimportação com a lógica corrigida, a receita total deve bater com R$ 1.037.946,70.
 
