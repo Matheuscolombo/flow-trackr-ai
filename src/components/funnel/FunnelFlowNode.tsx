@@ -31,7 +31,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
   return (
     <div className="relative group">
       {/* 4-direction handles */}
-      <Handle type="target" position={Position.Top} className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-top-1" />
+      <Handle type="target" position={Position.Top} id="top-target" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-top-1" />
       <Handle type="target" position={Position.Left} id="left-target" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-left-1" />
 
       <div
@@ -87,7 +87,7 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-bottom-1" />
+      <Handle type="source" position={Position.Bottom} id="bottom-source" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-bottom-1" />
       <Handle type="source" position={Position.Right} id="right-source" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-right-1" />
     </div>
   );

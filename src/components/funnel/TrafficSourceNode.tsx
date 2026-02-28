@@ -45,8 +45,8 @@ const TrafficSourceNode = memo(({ data }: NodeProps) => {
           <p className="text-[9px] text-muted-foreground">leads</p>
         </div>
       </div>
-      <Handle type="target" position={Position.Left} className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-left-1" />
-      <Handle type="source" position={Position.Right} className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-right-1" />
+      <Handle type="target" position={Position.Left} id="left-target" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-left-1" />
+      <Handle type="source" position={Position.Right} id="right-source" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-right-1" />
       <Handle type="source" position={Position.Bottom} id="bottom-source" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-bottom-1" />
       <Handle type="target" position={Position.Top} id="top-target" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-top-1" />
     </div>
