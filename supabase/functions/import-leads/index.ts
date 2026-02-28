@@ -323,6 +323,7 @@ async function handleFunnelImport(
   const lfsRows: Record<string, unknown>[] = [];
   const tagRows: Record<string, unknown>[] = [];
   const seenContacts = new Set<string>();
+  const duplicateLeadIds: string[] = [];
 
   for (const row of rows) {
     const email = normEmail(getFieldValue(row, "email", overrides, headers));
@@ -339,7 +340,12 @@ async function handleFunnelImport(
     let leadId = (email && emailIndex[email]) || (phone && phoneIndex[phone]) || null;
 
     if (leadId) {
-      if (existingInFunnel.has(leadId)) { duplicates++; continue; }
+      if (existingInFunnel.has(leadId)) {
+        duplicates++;
+        // Increment signup_count for scoring
+        duplicateLeadIds.push(leadId);
+        continue;
+      }
     } else {
       newLeads.push({
         workspace_id: workspaceId,
@@ -416,10 +422,19 @@ async function handleFunnelImport(
     }
   }
 
-  console.log(`[import-leads:funnel] imported=${imported} duplicates=${duplicates} noContact=${noContact}`);
+  // Update signup_count for duplicates
+  const uniqueDuplicateIds = [...new Set(duplicateLeadIds)];
+  for (let i = 0; i < uniqueDuplicateIds.length; i += CHUNK) {
+    const chunk = uniqueDuplicateIds.slice(i, i + CHUNK);
+    for (const lid of chunk) {
+      await supabase.rpc("increment_signup_count", { p_lead_id: lid });
+    }
+  }
+
+  console.log(`[import-leads:funnel] imported=${imported} duplicates=${duplicates} duplicatesUpdated=${uniqueDuplicateIds.length} noContact=${noContact}`);
 
   return new Response(
-    JSON.stringify({ ok: true, imported, duplicates, no_contact: noContact }),
+    JSON.stringify({ ok: true, imported, duplicates, duplicates_updated: uniqueDuplicateIds.length, no_contact: noContact }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
 }

@@ -311,6 +311,7 @@ export type Database = {
           is_ghost: boolean
           is_subscriber: boolean
           last_purchase_at: string | null
+          last_signup_at: string | null
           ltv_days: number | null
           metadata: Json
           name: string | null
@@ -319,6 +320,7 @@ export type Database = {
           purchase_count: number
           referral_source: string | null
           region: string | null
+          signup_count: number
           source: string
           total_revenue: number
           updated_at: string
@@ -343,6 +345,7 @@ export type Database = {
           is_ghost?: boolean
           is_subscriber?: boolean
           last_purchase_at?: string | null
+          last_signup_at?: string | null
           ltv_days?: number | null
           metadata?: Json
           name?: string | null
@@ -351,6 +354,7 @@ export type Database = {
           purchase_count?: number
           referral_source?: string | null
           region?: string | null
+          signup_count?: number
           source?: string
           total_revenue?: number
           updated_at?: string
@@ -375,6 +379,7 @@ export type Database = {
           is_ghost?: boolean
           is_subscriber?: boolean
           last_purchase_at?: string | null
+          last_signup_at?: string | null
           ltv_days?: number | null
           metadata?: Json
           name?: string | null
@@ -383,6 +388,7 @@ export type Database = {
           purchase_count?: number
           referral_source?: string | null
           region?: string | null
+          signup_count?: number
           source?: string
           total_revenue?: number
           updated_at?: string
