@@ -1,19 +1,36 @@
 
 
-## Problema
-A thumbnail continua cortando texto na direita por dois motivos:
-1. O card tem largura variável (`min-w-[240px] max-w-[260px]`) — pode renderizar menor que a imagem
-2. A imagem fica colada nas bordas do card, sem respiro visual
+## Funcionalidade: Apagar Funil
 
-## Solução
+Atualmente não existe opção para excluir um funil. Vou adicionar essa funcionalidade em dois lugares: na listagem de funis e na página de detalhe do funil.
 
-### Alterações em `src/components/funnel/FunnelFlowNode.tsx`
+### O que será feito
 
-1. **Fixar a largura do card em 260px** — trocar `min-w-[240px] max-w-[260px]` por `w-[260px]` para garantir que o card sempre tenha a mesma largura da imagem capturada
+1. **Adicionar opção "Apagar" no menu do card de funil** (`FunnelsPage.tsx`)
+   - Novo item "Apagar" no DropdownMenu existente (ao lado de "Duplicar")
+   - Ao clicar, abre um AlertDialog de confirmação com aviso de que leads órfãos serão removidos
 
-2. **Adicionar padding interno na área da thumbnail** — colocar `p-2` no container da imagem para criar margens visuais dos dois lados, com fundo escuro aparecendo como moldura
+2. **Lógica de exclusão** (diretamente no frontend)
+   - Deleta em cascata: `funnel_edges`, `funnel_source_nodes`, `stage_transition_rules`, `lead_funnel_stages`, `lead_events`, `funnel_stages`, e por fim o `funnels` registro
+   - Usa a edge function `clear-funnel-leads` já existente para limpar leads antes de apagar o funil em si
+   - Após limpar leads, deleta `funnel_edges`, `funnel_source_nodes`, `stage_transition_rules`, `funnel_stages` e o próprio `funnels`
 
-3. **Arredondar a imagem** — adicionar `rounded-md` na `<img>` para combinar com o estilo do card
+3. **Confirmação visual**
+   - AlertDialog com título "Apagar funil?" e descrição clara do impacto
+   - Botão vermelho "Apagar" com estado de loading
+   - Toast de sucesso/erro após a operação
 
-Resultado: a imagem fica centralizada dentro do card com margem uniforme nos 4 lados, sem corte nenhum.
+### Arquivos alterados
+
+- `src/pages/FunnelsPage.tsx` — adicionar item "Apagar" no dropdown + AlertDialog + lógica de exclusão
+
+### Detalhes técnicos
+
+A exclusão segue esta ordem para respeitar foreign keys:
+1. Chamar `clear-funnel-leads` (limpa lead_funnel_stages, lead_events, leads órfãos)
+2. `DELETE funnel_edges WHERE funnel_id`
+3. `DELETE funnel_source_nodes WHERE funnel_id`
+4. `DELETE stage_transition_rules WHERE funnel_id`
+5. `DELETE funnel_stages WHERE funnel_id`
+6. `DELETE funnels WHERE id`
 
