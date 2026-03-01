@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, GitBranch, CheckCircle2, XCircle, TrendingUp, Users, Loader2, Copy, MoreVertical } from "lucide-react";
+import { Plus, GitBranch, CheckCircle2, XCircle, TrendingUp, Users, Loader2, Copy, MoreVertical, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -35,6 +36,8 @@ const FunnelsPage = () => {
   const [funnels, setFunnels] = useState<Funnel[]>([]);
   const [loading, setLoading] = useState(true);
   const [duplicating, setDuplicating] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Funnel | null>(null);
   const { toast } = useToast();
 
   const loadFunnels = async () => {
@@ -125,6 +128,42 @@ const FunnelsPage = () => {
     }
   };
 
+  const handleDelete = async (funnel: Funnel) => {
+    setDeleting(funnel.id);
+    try {
+      // 1. Clear leads via edge function
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("clear-funnel-leads", {
+        body: { funnel_id: funnel.id },
+      });
+      if (res.error) throw new Error(res.error.message || "Erro ao limpar leads");
+
+      // 2. Delete related records in order
+      await supabase.from("funnel_edges").delete().eq("funnel_id", funnel.id);
+      await supabase.from("funnel_source_nodes").delete().eq("funnel_id", funnel.id);
+      await supabase.from("stage_transition_rules").delete().eq("funnel_id", funnel.id);
+      await supabase.from("funnel_stages").delete().eq("funnel_id", funnel.id);
+      
+      // 3. Delete sentinel_alerts referencing this funnel
+      await supabase.from("sentinel_alerts").delete().eq("funnel_id", funnel.id);
+      
+      // 4. Delete tags scoped to this funnel
+      await supabase.from("tags").delete().eq("funnel_id", funnel.id);
+
+      // 5. Delete the funnel itself
+      const { error: delErr } = await supabase.from("funnels").delete().eq("id", funnel.id);
+      if (delErr) throw new Error(delErr.message);
+
+      toast({ title: "Funil apagado!", description: `"${funnel.name}" foi removido com sucesso.` });
+      await loadFunnels();
+    } catch (err: any) {
+      toast({ title: "Erro ao apagar", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(null);
+      setDeleteTarget(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="px-6 py-4 border-b border-border flex items-center justify-between">
@@ -211,6 +250,14 @@ const FunnelsPage = () => {
                             <Copy className="w-3.5 h-3.5 mr-2" />
                             {duplicating === funnel.id ? "Duplicando..." : "Duplicar"}
                           </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onClick={(e) => { e.preventDefault(); setDeleteTarget(funnel); }}
+                            disabled={deleting === funnel.id}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                            {deleting === funnel.id ? "Apagando..." : "Apagar"}
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                       <div className="text-right">
@@ -249,6 +296,28 @@ const FunnelsPage = () => {
           </div>
         )}
       </div>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apagar funil?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O funil <strong>"{deleteTarget?.name}"</strong> será permanentemente removido junto com todas as suas etapas, regras de transição e conexões.
+              Leads que não estiverem em nenhum outro funil também serão apagados. Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={!!deleting}
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+            >
+              {deleting ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Apagando...</> : "Apagar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
