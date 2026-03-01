@@ -1,20 +1,19 @@
 
 
 ## Problema
-
-O `object-cover` corta a imagem para preencher o container — se o card renderizar ligeiramente menor que a imagem (240px vs 260px), ele corta as laterais. Isso é o que está cortando o texto na direita.
+A thumbnail continua cortando texto na direita por dois motivos:
+1. O card tem largura variável (`min-w-[240px] max-w-[260px]`) — pode renderizar menor que a imagem
+2. A imagem fica colada nas bordas do card, sem respiro visual
 
 ## Solução
 
-Trocar para `object-contain object-top` no `<img>` da thumbnail. Isso garante que a imagem inteira seja exibida sem corte nenhum, alinhada ao topo do container. O fundo escuro preenche qualquer espaço sobrando.
+### Alterações em `src/components/funnel/FunnelFlowNode.tsx`
 
-### Alteração em `src/components/funnel/FunnelFlowNode.tsx`
+1. **Fixar a largura do card em 260px** — trocar `min-w-[240px] max-w-[260px]` por `w-[260px]` para garantir que o card sempre tenha a mesma largura da imagem capturada
 
-**Linha 47** — trocar a classe da imagem:
-```
-- className="w-full h-full object-cover object-center"
-+ className="w-full h-full object-contain object-top"
-```
+2. **Adicionar padding interno na área da thumbnail** — colocar `p-2` no container da imagem para criar margens visuais dos dois lados, com fundo escuro aparecendo como moldura
 
-Isso resolve de vez: a imagem é redimensionada para caber inteira dentro do container, mantendo centralização horizontal e alinhamento ao topo, sem cortar nada nas laterais.
+3. **Arredondar a imagem** — adicionar `rounded-md` na `<img>` para combinar com o estilo do card
+
+Resultado: a imagem fica centralizada dentro do card com margem uniforme nos 4 lados, sem corte nenhum.
 
