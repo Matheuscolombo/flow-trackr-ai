@@ -29,12 +29,20 @@ function parseCSV(text: string, sep: string): Record<string, string>[] {
   if (lines.length < 2) return [];
   const rawHeader = lines[0].replace(/^\uFEFF/, "");
   const headers = rawHeader.split(sep).map((h) => h.replace(/^"|"$/g, "").trim());
-  return lines.slice(1).map((line) => {
-    const values = line.split(sep).map((v) => v.replace(/^"|"$/g, "").trim());
+  const headersLower = new Set(headers.map((h) => h.toLowerCase().trim()));
+  const result: Record<string, string>[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(sep).map((v) => v.replace(/^"|"$/g, "").trim());
+    // Skip duplicate header rows: if >50% of values match known headers, it's a header line
+    const matchCount = values.filter((v) => headersLower.has(v.toLowerCase().trim())).length;
+    if (matchCount > headers.length * 0.5) continue;
+
     const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = values[i] ?? ""; });
-    return row;
-  });
+    headers.forEach((h, idx) => { row[h] = values[idx] ?? ""; });
+    result.push(row);
+  }
+  return result;
 }
 
 const SYNONYMS: Record<string, string[]> = {
@@ -296,9 +304,23 @@ async function handleBackfill(
   const signupUpdates: string[] = [];
 
   for (const row of rows) {
-    const email = normEmail(getBackfillValue(row, "email", headers));
-    const phone = normPhone(getBackfillValue(row, "telefone", headers));
-    const name = getBackfillValue(row, "nome", headers) || null;
+    let email = normEmail(getBackfillValue(row, "email", headers));
+    let phone = normPhone(getBackfillValue(row, "telefone", headers));
+    const rawName = getBackfillValue(row, "nome", headers) || "";
+
+    // Fallback: if email looks like a phone and name looks like an email, swap them
+    if (email && !email.includes("@") && /^\+?\d{8,}$/.test(email.replace(/\D/g, ""))) {
+      if (rawName.includes("@")) {
+        phone = phone || normPhone(email);
+        email = normEmail(rawName);
+      } else {
+        // email field has digits only → treat as phone, clear email
+        phone = phone || normPhone(email);
+        email = "";
+      }
+    }
+
+    const name = rawName.includes("@") ? null : (rawName || null);
     const device = getBackfillValue(row, "device", headers) || null;
     const pageUrl = getBackfillValue(row, "page_url", headers) || null;
     const convDate = getBackfillValue(row, "conversion_date", headers) || null;
@@ -373,8 +395,21 @@ async function handleBackfill(
   // Second pass: create events and LFS entries
   const contactOccurrences2: Record<string, number> = {};
   for (const row of rows) {
-    const email = normEmail(getBackfillValue(row, "email", headers));
-    const phone = normPhone(getBackfillValue(row, "telefone", headers));
+    let email = normEmail(getBackfillValue(row, "email", headers));
+    let phone = normPhone(getBackfillValue(row, "telefone", headers));
+    const rawName2 = getBackfillValue(row, "nome", headers) || "";
+
+    // Same fallback as first pass
+    if (email && !email.includes("@") && /^\+?\d{8,}$/.test(email.replace(/\D/g, ""))) {
+      if (rawName2.includes("@")) {
+        phone = phone || normPhone(email);
+        email = normEmail(rawName2);
+      } else {
+        phone = phone || normPhone(email);
+        email = "";
+      }
+    }
+
     if (!email && !phone) continue;
     if (email && !email.includes("@")) continue;
 
@@ -385,7 +420,7 @@ async function handleBackfill(
     const leadId = (email && emailIndex[email]) || (phone && phoneIndex[phone]) || null;
     if (!leadId) continue;
 
-    const name = getBackfillValue(row, "nome", headers) || null;
+    const name = rawName2.includes("@") ? null : (rawName2 || null);
     const device = getBackfillValue(row, "device", headers) || null;
     const pageUrl = getBackfillValue(row, "page_url", headers) || null;
     const convDate = getBackfillValue(row, "conversion_date", headers) || null;
