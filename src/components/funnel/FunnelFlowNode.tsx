@@ -35,16 +35,16 @@ const FunnelFlowNode = memo(({ data }: NodeProps) => {
       <Handle type="target" position={Position.Left} id="left-target" className="!w-2.5 !h-2.5 !bg-muted-foreground/40 !border-background !-left-1" />
 
       <div
-        className="bg-card border-2 rounded-xl min-w-[240px] max-w-[260px] shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
+        className="bg-card border-2 rounded-xl w-[260px] shadow-md hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
         style={{ borderColor: color }}
       >
         {/* Thumbnail area */}
         {showThumbnail ? (
-          <div className="w-full h-[200px] bg-black/20 relative overflow-hidden">
+          <div className="w-full h-[200px] bg-black/20 relative overflow-hidden p-2">
             <img
               src={effectiveThumb!}
               alt={label}
-              className="w-full h-full object-contain object-top"
+              className="w-full h-full object-contain object-top rounded-md"
               onError={() => setImgError(true)}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-card/50 via-transparent to-transparent" />
