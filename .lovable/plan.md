@@ -1,36 +1,43 @@
 
 
-## Funcionalidade: Apagar Funil
+## Problema: CSV com schema duplo
 
-Atualmente não existe opção para excluir um funil. Vou adicionar essa funcionalidade em dois lugares: na listagem de funis e na página de detalhe do funil.
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-### O que será feito
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-1. **Adicionar opção "Apagar" no menu do card de funil** (`FunnelsPage.tsx`)
-   - Novo item "Apagar" no DropdownMenu existente (ao lado de "Duplicar")
-   - Ao clicar, abre um AlertDialog de confirmação com aviso de que leads órfãos serão removidos
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-2. **Lógica de exclusão** (diretamente no frontend)
-   - Deleta em cascata: `funnel_edges`, `funnel_source_nodes`, `stage_transition_rules`, `lead_funnel_stages`, `lead_events`, `funnel_stages`, e por fim o `funnels` registro
-   - Usa a edge function `clear-funnel-leads` já existente para limpar leads antes de apagar o funil em si
-   - Após limpar leads, deleta `funnel_edges`, `funnel_source_nodes`, `stage_transition_rules`, `funnel_stages` e o próprio `funnels`
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-3. **Confirmação visual**
-   - AlertDialog com título "Apagar funil?" e descrição clara do impacto
-   - Botão vermelho "Apagar" com estado de loading
-   - Toast de sucesso/erro após a operação
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-### Arquivos alterados
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-- `src/pages/FunnelsPage.tsx` — adicionar item "Apagar" no dropdown + AlertDialog + lógica de exclusão
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
 
 ### Detalhes técnicos
 
-A exclusão segue esta ordem para respeitar foreign keys:
-1. Chamar `clear-funnel-leads` (limpa lead_funnel_stages, lead_events, leads órfãos)
-2. `DELETE funnel_edges WHERE funnel_id`
-3. `DELETE funnel_source_nodes WHERE funnel_id`
-4. `DELETE stage_transition_rules WHERE funnel_id`
-5. `DELETE funnel_stages WHERE funnel_id`
-6. `DELETE funnels WHERE id`
+No `parseCSV`, adicionar detecção de header duplicado:
+```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
+```
+
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
+
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 
