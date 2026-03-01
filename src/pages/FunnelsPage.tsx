@@ -163,18 +163,10 @@ const FunnelsPage = () => {
         .eq("funnel_id", funnel.id);
 
       if (originalEdges && originalEdges.length > 0) {
-        const mapNodeId = (id: string) => {
-          // Stage nodes use "stage-{uuid}" format, source nodes use "source-{uuid}"
-          if (id.startsWith("stage-")) {
-            const oldId = id.replace("stage-", "");
-            const newId = stageIdMap.get(oldId);
-            return newId ? `stage-${newId}` : null;
-          }
-          if (id.startsWith("source-")) {
-            const oldId = id.replace("source-", "");
-            const newId = sourceNodeIdMap.get(oldId);
-            return newId ? `source-${newId}` : null;
-          }
+        const mapNodeId = (id: string): string | null => {
+          // IDs are plain UUIDs — could be a stage or a source node
+          if (stageIdMap.has(id)) return stageIdMap.get(id)!;
+          if (sourceNodeIdMap.has(id)) return sourceNodeIdMap.get(id)!;
           return null;
         };
 
