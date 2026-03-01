@@ -32,14 +32,28 @@ function parseCSV(text: string, sep: string): Record<string, string>[] {
   const headersLower = new Set(headers.map((h) => h.toLowerCase().trim()));
   const result: Record<string, string>[] = [];
 
+  // Track alternate headers from duplicate header rows with fewer columns
+  let altHeaders: string[] | null = null;
+
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(sep).map((v) => v.replace(/^"|"$/g, "").trim());
-    // Skip duplicate header rows: if >50% of values match known headers, it's a header line
+    // Detect duplicate header rows: if >50% of values match known headers
     const matchCount = values.filter((v) => headersLower.has(v.toLowerCase().trim())).length;
-    if (matchCount > headers.length * 0.5) continue;
+    if (matchCount > headers.length * 0.4) {
+      // Save as alternate header if it has fewer columns (missing column scenario)
+      if (values.length < headers.length) {
+        altHeaders = values.map((v) => v.trim());
+      }
+      continue;
+    }
 
     const row: Record<string, string> = {};
-    headers.forEach((h, idx) => { row[h] = values[idx] ?? ""; });
+    // If row has fewer values than primary header AND we have an alternate header with matching count, use it
+    if (altHeaders && values.length <= altHeaders.length && values.length < headers.length) {
+      altHeaders.forEach((h, idx) => { row[h] = values[idx] ?? ""; });
+    } else {
+      headers.forEach((h, idx) => { row[h] = values[idx] ?? ""; });
+    }
     result.push(row);
   }
   return result;
