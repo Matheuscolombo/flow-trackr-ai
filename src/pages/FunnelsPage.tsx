@@ -82,9 +82,16 @@ const FunnelsPage = () => {
 
       if (createErr || !created) throw new Error(createErr?.message || "Erro ao criar funil");
 
-      // 2. Copy stages
+      // 2. Copy stages (including positions and visual metadata)
       const stageIdMap = new Map<string, string>();
       for (const stage of funnel.funnel_stages) {
+        // Fetch full stage data with positions
+        const { data: fullStage } = await supabase
+          .from("funnel_stages")
+          .select("*")
+          .eq("id", stage.id)
+          .single();
+
         const { data: newStage } = await supabase
           .from("funnel_stages")
           .insert({
@@ -92,6 +99,10 @@ const FunnelsPage = () => {
             name: stage.name,
             color: stage.color,
             order_index: stage.order_index,
+            position_x: fullStage?.position_x ?? 0,
+            position_y: fullStage?.position_y ?? 0,
+            page_url: fullStage?.page_url ?? null,
+            thumbnail_url: fullStage?.thumbnail_url ?? null,
           })
           .select("id")
           .single();
@@ -116,6 +127,74 @@ const FunnelsPage = () => {
           }));
         if (mappedRules.length > 0) {
           await supabase.from("stage_transition_rules").insert(mappedRules);
+        }
+      }
+
+      // 4. Copy source nodes
+      const sourceNodeIdMap = new Map<string, string>();
+      const { data: originalNodes } = await supabase
+        .from("funnel_source_nodes")
+        .select("*")
+        .eq("funnel_id", funnel.id);
+
+      if (originalNodes && originalNodes.length > 0) {
+        for (const node of originalNodes) {
+          const { data: newNode } = await supabase
+            .from("funnel_source_nodes")
+            .insert({
+              funnel_id: created.id,
+              name: node.name,
+              icon_type: node.icon_type,
+              position_x: node.position_x,
+              position_y: node.position_y,
+              lead_count: 0,
+              connected_stage_id: node.connected_stage_id ? stageIdMap.get(node.connected_stage_id) || null : null,
+            })
+            .select("id")
+            .single();
+          if (newNode) sourceNodeIdMap.set(node.id, newNode.id);
+        }
+      }
+
+      // 5. Copy edges (remapping node IDs)
+      const { data: originalEdges } = await supabase
+        .from("funnel_edges")
+        .select("*")
+        .eq("funnel_id", funnel.id);
+
+      if (originalEdges && originalEdges.length > 0) {
+        const mapNodeId = (id: string) => {
+          // Stage nodes use "stage-{uuid}" format, source nodes use "source-{uuid}"
+          if (id.startsWith("stage-")) {
+            const oldId = id.replace("stage-", "");
+            const newId = stageIdMap.get(oldId);
+            return newId ? `stage-${newId}` : null;
+          }
+          if (id.startsWith("source-")) {
+            const oldId = id.replace("source-", "");
+            const newId = sourceNodeIdMap.get(oldId);
+            return newId ? `source-${newId}` : null;
+          }
+          return null;
+        };
+
+        const mappedEdges = originalEdges
+          .map((e) => {
+            const newSource = mapNodeId(e.source_node_id);
+            const newTarget = mapNodeId(e.target_node_id);
+            if (!newSource || !newTarget) return null;
+            return {
+              funnel_id: created.id,
+              source_node_id: newSource,
+              target_node_id: newTarget,
+              source_handle: e.source_handle,
+              target_handle: e.target_handle,
+            };
+          })
+          .filter(Boolean);
+
+        if (mappedEdges.length > 0) {
+          await supabase.from("funnel_edges").insert(mappedEdges);
         }
       }
 
