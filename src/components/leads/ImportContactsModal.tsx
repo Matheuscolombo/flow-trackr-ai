@@ -33,8 +33,8 @@ function countDataLines(raw: string): number {
 
 const SYNONYMS: Record<string, string[]> = {
   nome: ["nome", "name", "nome completo", "full_name", "customer_name", "nome do lead"],
-  telefone: ["telefone", "phone", "fone", "celular", "whatsapp", "mobile"],
-  email: ["email", "e-mail", "e-mail do lead", "customer_email"],
+  telefone: ["telefone", "phone", "fone", "celular", "whatsapp", "mobile", "whatsapp com ddd", "telefone com ddd", "whatsapp completo", "telefone completo do cliente", "buyer_phone", "customer_phone", "fones"],
+  email: ["email", "e-mail", "e-mail do lead", "customer_email", "seu e-mail", "seu email", "e-mail do comprador", "buyer_email"],
 };
 
 const FIELD_LABELS: Record<string, string> = {
