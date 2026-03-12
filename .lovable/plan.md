@@ -1,43 +1,52 @@
 
 
-## Problema: CSV com schema duplo
+## Integração UAZAPI - Principais Endpoints
 
-O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
-- Linha 1: header com 23 colunas (inclui "Nome")
-- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
+A UAZAPI é uma API brasileira para automação do WhatsApp Web. Aqui estão os endpoints mais relevantes para o seu sistema de leads:
 
-Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
+### **Endpoints Principais**
 
-## Solução: Tornar o parser de CSV resiliente a schemas duplos
+| Categoria | Endpoint | Descrição |
+|-----------|----------|-----------|
+| **Instance** | `POST /instance/create` | Criar instância WhatsApp (QR code) |
+| **Instance** | `GET /instance/connectionState` | Verificar status da conexão |
+| **Messaging** | `POST /message/sendText` | Enviar mensagem de texto |
+| **Messaging** | `POST /message/sendImage` | Enviar imagem (URL ou base64) |
+| **Messaging** | `POST /message/sendDocument` | Enviar documento PDF, etc |
+| **Messaging** | `POST /message/sendAudio` | Enviar áudio/áudio transcrito |
+| **Messaging** | `POST /message/sendButton` | Enviar mensagem com botões |
+| **Messaging** | `POST /message/sendList` | Enviar lista de opções |
+| **Chat** | `GET /chat/getChat` | Histórico de conversa por número |
+| **Chat** | `GET /chat/getAllChats` | Listar todas as conversas |
+| **Chat** | `GET /chat/getMessages` | Buscar mensagens específicas |
+| **Contact** | `GET /contact/getContact` | Dados de um contato |
+| **Contact** | `GET /contact/getProfilePicture` | Foto do perfil |
+| **Group** | `POST /group/create` | Criar grupo |
+| **Group** | `POST /group/sendText` | Enviar mensagem para grupo |
+| **Webhook** | `POST /webhook/configure` | Configurar webhook de eventos |
 
-### Alterações em `supabase/functions/import-leads/index.ts`
+### **Casos de Uso para Sentinel**
 
-1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
+1. **Notificação de novo lead** → `sendText` para número do vendedor
+2. **Follow-up automático** → `sendText`/`sendImage` após X horas no estágio
+3. **Alerta de conversão** → `sendText` quando lead comprar
+4. **Relatório diário** → `sendText` com resumo de métricas
+5. **Sincronização de conversas** → `getChat` para histórico completo
 
-2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
+### **Implementação Sugerida**
 
-3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
+**Backend (Edge Function):**
+- Criar `supabase/functions/uazapi-send/index.ts` para enviar mensagens
+- Criar `supabase/functions/uazapi-webhook/index.ts` para receber eventos (mensagens recebidas, status de entrega)
+- Usar secrets para armazenar API key e instance ID
 
-### Detalhes técnicos
+**Frontend:**
+- Adicionar configuração de UAZAPI nas Settings
+- Permitir associar número WhatsApp a cada funil/campanha
+- Criar templates de mensagens personalizáveis
 
-No `parseCSV`, adicionar detecção de header duplicado:
-```
-// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
-const matchCount = values.filter(v => headers.includes(v.trim())).length;
-if (matchCount > headers.length * 0.5) continue;
-```
-
-Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
-```
-// Se email não tem @ mas parece telefone, e nome parece email → trocar
-if (!email.includes("@") && /^\d+$/.test(email)) {
-  const nameVal = getFieldValue(row, "nome", ...);
-  if (nameVal.includes("@")) {
-    phone = normPhone(email);
-    email = normEmail(nameVal);
-  }
-}
-```
-
-Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
+**O que você quer implementar?**
+- Enviar mensagens automáticas quando leads entrarem/converterem?
+- Receber webhooks de mensagens recebidas e sincronizar com leads?
+- Ambos (sistema bidirecional completo)?
 
