@@ -194,7 +194,8 @@ Deno.serve(async (req) => {
       .from("whatsapp_messages")
       .upsert(
         {
-          workspace_id: workspaceId,
+          workspace_id: workspaceId!,
+          instance_id: instanceId,
           lead_id: lead?.id || null,
           remote_jid: remoteJid,
           phone,
