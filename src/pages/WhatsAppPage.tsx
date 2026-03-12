@@ -340,7 +340,7 @@ const WhatsAppPage = () => {
                       size="sm"
                       variant="outline"
                       className="text-[11px] h-7 flex-1"
-                      onClick={() => handleGetQR(inst.id)}
+                      onClick={() => handleConnect(inst.id)}
                       disabled={inst.status === "connected"}
                     >
                       <QrCode className="w-3 h-3 mr-1" />
