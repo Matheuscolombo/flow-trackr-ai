@@ -121,14 +121,22 @@ const WhatsAppPage = () => {
     }
   };
 
-  const handleGetQR = async (instanceId: string) => {
+  const handleConnect = async (instanceId: string, phone?: string) => {
     setQrData({ instanceId, qrcode: null, loading: true });
-    const data = await callManage("qrcode", { instance_id: instanceId });
-    console.log("[WhatsApp] QR response:", JSON.stringify(data));
-    const qrObj = data.qrcode || {};
-    const rawQr = qrObj.qrcode || qrObj.base64 || qrObj.pairingCode || null;
-    const qr = typeof rawQr === 'string' ? rawQr : null;
+    const body: Record<string, string> = { instance_id: instanceId };
+    if (phone) body.phone = phone;
+    const data = await callManage("connect", {}, body);
+    console.log("[WhatsApp] connect response:", JSON.stringify(data));
+
+    // Extract QR code or pairing code from response
+    const rawQr = data.qrcode || data.pairingCode || data.base64 || data.code || null;
+    const qr = typeof rawQr === 'string' && rawQr.length > 0 ? rawQr : null;
     setQrData({ instanceId, qrcode: qr, loading: false });
+
+    // Update local status to connecting
+    setInstances((prev) =>
+      prev.map((i) => (i.id === instanceId ? { ...i, status: "connecting" } : i))
+    );
   };
 
   const handleCheckStatus = async (instanceId: string) => {
