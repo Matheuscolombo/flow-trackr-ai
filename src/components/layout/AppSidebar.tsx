@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Zap,
   Package,
+  MessageSquare,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -44,6 +45,7 @@ const navItems = [
   { title: "Leads", url: "/leads", icon: Users },
   { title: "Produtos", url: "/products", icon: Package },
   { title: "Insights", url: "/insights", icon: Bell },
+  { title: "WhatsApp", url: "/whatsapp", icon: MessageSquare },
 ];
 
 export function AppSidebar() {

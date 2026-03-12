@@ -17,6 +17,7 @@ import CampaignsPage from "./pages/CampaignsPage";
 import CampaignDetailPage from "./pages/CampaignDetailPage";
 import CampaignBuilderPage from "./pages/CampaignBuilderPage";
 import ProductsPage from "./pages/ProductsPage";
+import WhatsAppPage from "./pages/WhatsAppPage";
 
 const queryClient = new QueryClient();
 
@@ -47,6 +48,7 @@ function AppLayout() {
         <Route path="/leads" element={<LeadsPage />} />
         <Route path="/insights" element={<InsightsPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppShell>

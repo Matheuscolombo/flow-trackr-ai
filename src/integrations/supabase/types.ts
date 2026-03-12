@@ -881,12 +881,57 @@ export type Database = {
           },
         ]
       }
+      whatsapp_instances: {
+        Row: {
+          api_token: string | null
+          created_at: string
+          id: string
+          instance_display_name: string
+          instance_name: string
+          phone: string | null
+          status: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          api_token?: string | null
+          created_at?: string
+          id?: string
+          instance_display_name: string
+          instance_name: string
+          phone?: string | null
+          status?: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          api_token?: string | null
+          created_at?: string
+          id?: string
+          instance_display_name?: string
+          instance_name?: string
+          phone?: string | null
+          status?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_instances_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_messages: {
         Row: {
           body: string | null
           created_at: string
           direction: string
           id: string
+          instance_id: string | null
           lead_id: string | null
           media_mime_type: string | null
           media_url: string | null
@@ -904,6 +949,7 @@ export type Database = {
           created_at?: string
           direction?: string
           id?: string
+          instance_id?: string | null
           lead_id?: string | null
           media_mime_type?: string | null
           media_url?: string | null
@@ -921,6 +967,7 @@ export type Database = {
           created_at?: string
           direction?: string
           id?: string
+          instance_id?: string | null
           lead_id?: string | null
           media_mime_type?: string | null
           media_url?: string | null
@@ -934,6 +981,13 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "whatsapp_messages_lead_id_fkey"
             columns: ["lead_id"]
