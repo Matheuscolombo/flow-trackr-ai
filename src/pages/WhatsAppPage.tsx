@@ -116,7 +116,7 @@ const WhatsAppPage = () => {
       await fetchInstances();
       // Auto-fetch QR code after creation
       if (data.instance?.id) {
-        setTimeout(() => handleGetQR(data.instance.id), 1500);
+        setTimeout(() => handleConnect(data.instance.id), 2000);
       }
     }
   };
