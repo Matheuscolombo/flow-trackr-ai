@@ -120,7 +120,9 @@ const WhatsAppPage = () => {
   const handleGetQR = async (instanceId: string) => {
     setQrData({ instanceId, qrcode: null, loading: true });
     const data = await callManage("qrcode", { instance_id: instanceId });
-    const qr = data.qrcode?.qrcode || data.qrcode?.base64 || data.qrcode?.pairingCode || null;
+    console.log("[WhatsApp] QR response:", JSON.stringify(data));
+    const qrObj = data.qrcode || {};
+    const qr = qrObj.qrcode || qrObj.base64 || qrObj.pairingCode || qrObj.data || qrObj.code || null;
     setQrData({ instanceId, qrcode: qr, loading: false });
   };
 
