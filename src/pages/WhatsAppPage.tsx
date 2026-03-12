@@ -126,7 +126,8 @@ const WhatsAppPage = () => {
     const data = await callManage("qrcode", { instance_id: instanceId });
     console.log("[WhatsApp] QR response:", JSON.stringify(data));
     const qrObj = data.qrcode || {};
-    const qr = qrObj.qrcode || qrObj.base64 || qrObj.pairingCode || qrObj.data || qrObj.code || null;
+    const rawQr = qrObj.qrcode || qrObj.base64 || qrObj.pairingCode || null;
+    const qr = typeof rawQr === 'string' ? rawQr : null;
     setQrData({ instanceId, qrcode: qr, loading: false });
   };
 
