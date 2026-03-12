@@ -881,6 +881,75 @@ export type Database = {
           },
         ]
       }
+      whatsapp_messages: {
+        Row: {
+          body: string | null
+          created_at: string
+          direction: string
+          id: string
+          lead_id: string | null
+          media_mime_type: string | null
+          media_url: string | null
+          message_id: string
+          message_type: string
+          payload_raw: Json
+          phone: string
+          remote_jid: string
+          status: string
+          timestamp_msg: string
+          workspace_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          direction?: string
+          id?: string
+          lead_id?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_id: string
+          message_type?: string
+          payload_raw?: Json
+          phone: string
+          remote_jid: string
+          status?: string
+          timestamp_msg?: string
+          workspace_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          direction?: string
+          id?: string
+          lead_id?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_id?: string
+          message_type?: string
+          payload_raw?: Json
+          phone?: string
+          remote_jid?: string
+          status?: string
+          timestamp_msg?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_messages_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspaces: {
         Row: {
           created_at: string
