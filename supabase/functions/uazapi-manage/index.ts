@@ -166,6 +166,7 @@ Deno.serve(async (req) => {
       });
 
       const qrData = await qrRes.json();
+      console.log("[uazapi-manage] qrcode response:", JSON.stringify(qrData));
 
       return new Response(JSON.stringify({ qrcode: qrData }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

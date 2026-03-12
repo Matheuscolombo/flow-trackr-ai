@@ -109,18 +109,24 @@ const WhatsAppPage = () => {
     if (data.error) {
       toast({ title: "Erro ao criar instância", description: data.error, variant: "destructive" });
     } else {
-      toast({ title: "Instância criada!", description: `"${newDisplayName || newName}" criada. Escaneie o QR code para conectar.` });
+      toast({ title: "Instância criada!", description: `"${newDisplayName || newName}" criada. Buscando QR Code...` });
       setDialogOpen(false);
       setNewName("");
       setNewDisplayName("");
-      fetchInstances();
+      await fetchInstances();
+      // Auto-fetch QR code after creation
+      if (data.instance?.id) {
+        setTimeout(() => handleGetQR(data.instance.id), 1500);
+      }
     }
   };
 
   const handleGetQR = async (instanceId: string) => {
     setQrData({ instanceId, qrcode: null, loading: true });
     const data = await callManage("qrcode", { instance_id: instanceId });
-    const qr = data.qrcode?.qrcode || data.qrcode?.base64 || data.qrcode?.pairingCode || null;
+    console.log("[WhatsApp] QR response:", JSON.stringify(data));
+    const qrObj = data.qrcode || {};
+    const qr = qrObj.qrcode || qrObj.base64 || qrObj.pairingCode || qrObj.data || qrObj.code || null;
     setQrData({ instanceId, qrcode: qr, loading: false });
   };
 
