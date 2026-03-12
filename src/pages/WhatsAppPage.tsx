@@ -129,8 +129,17 @@ const WhatsAppPage = () => {
     console.log("[WhatsApp] connect response:", JSON.stringify(data));
 
     // Extract QR code or pairing code from response
-    const rawQr = data.qrcode || data.pairingCode || data.base64 || data.code || null;
-    const qr = typeof rawQr === 'string' && rawQr.length > 0 ? rawQr : null;
+    const rawQr =
+      data.qrcode ||
+      data.instance?.qrcode ||
+      data.pairingCode ||
+      data.paircode ||
+      data.instance?.pairingCode ||
+      data.instance?.paircode ||
+      data.base64 ||
+      data.instance?.base64 ||
+      null;
+    const qr = typeof rawQr === "string" && rawQr.trim().length > 0 ? rawQr : null;
     setQrData({ instanceId, qrcode: qr, loading: false });
 
     // Update local status to connecting
