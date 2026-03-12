@@ -136,9 +136,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ── QR CODE ──
-    if (req.method === "GET" && action === "qrcode") {
-      const instanceId = url.searchParams.get("instance_id");
+    // ── CONNECT (QR Code or Pairing Code) ──
+    if (req.method === "POST" && action === "connect") {
+      const body = await req.json();
+      const instanceId = body.instance_id;
       if (!instanceId) {
         return new Response(JSON.stringify({ error: "instance_id required" }), {
           status: 400,
@@ -161,14 +162,28 @@ Deno.serve(async (req) => {
       }
 
       const baseUrl = UAZAPI_URL.replace(/\/$/, "");
-      const qrRes = await fetch(`${baseUrl}/instance/qrcode`, {
-        headers: { "token": inst.api_token },
+      const connectBody: Record<string, string> = {};
+      if (body.phone) connectBody.phone = body.phone;
+
+      const connectRes = await fetch(`${baseUrl}/instance/connect`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "token": inst.api_token,
+        },
+        body: JSON.stringify(connectBody),
       });
 
-      const qrData = await qrRes.json();
-      console.log("[uazapi-manage] qrcode response:", JSON.stringify(qrData));
+      const connectData = await connectRes.json();
+      console.log("[uazapi-manage] connect response:", JSON.stringify(connectData));
 
-      return new Response(JSON.stringify({ qrcode: qrData }), {
+      // Update status to connecting
+      await serviceClient
+        .from("whatsapp_instances")
+        .update({ status: "connecting" })
+        .eq("id", instanceId);
+
+      return new Response(JSON.stringify(connectData), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
