@@ -152,34 +152,42 @@ Deno.serve(async (req) => {
 
     const direction = fromMe ? "outbound" : "inbound";
 
-    // Tentar encontrar lead pelo telefone (em qualquer workspace)
-    const { data: lead } = await serviceClient
-      .from("leads")
-      .select("id, workspace_id")
-      .eq("phone", phone)
-      .limit(1)
-      .maybeSingle();
+    // Identificar a instância pela qual a mensagem chegou
+    // UAZAPI envia o nome da instância no payload
+    const instanceName = (body.instance as string) || (body.instanceName as string) ||
+      ((body.data as Record<string, unknown>)?.instance as string) || "";
 
-    // Se não encontrou lead, usar o primeiro workspace disponível
-    // (idealmente deveria vir de config, mas por ora pega do lead)
-    let workspaceId: string | null = lead?.workspace_id || null;
+    let instanceId: string | null = null;
+    let workspaceId: string | null = null;
 
-    if (!workspaceId) {
-      // Buscar primeiro workspace como fallback
-      const { data: ws } = await serviceClient
-        .from("workspaces")
-        .select("id")
-        .limit(1)
-        .single();
-      workspaceId = ws?.id || null;
+    if (instanceName) {
+      const { data: inst } = await serviceClient
+        .from("whatsapp_instances")
+        .select("id, workspace_id")
+        .eq("instance_name", instanceName)
+        .maybeSingle();
+
+      if (inst) {
+        instanceId = inst.id;
+        workspaceId = inst.workspace_id;
+      }
     }
 
-    if (!workspaceId) {
-      return new Response(JSON.stringify({ error: "No workspace found" }), {
-        status: 400,
+    // Se não encontrou instância registrada, ignorar
+    if (!instanceId) {
+      console.log(`[uazapi-webhook] ignoring: instance "${instanceName}" not registered`);
+      return new Response(JSON.stringify({ ok: true, action: "instance_not_registered" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Tentar encontrar lead pelo telefone no workspace da instância
+    const { data: lead } = await serviceClient
+      .from("leads")
+      .select("id")
+      .eq("workspace_id", workspaceId!)
+      .eq("phone", phone)
+      .maybeSingle();
 
     // Inserir mensagem (com ON CONFLICT para evitar duplicatas)
     const { error: insertErr } = await serviceClient
