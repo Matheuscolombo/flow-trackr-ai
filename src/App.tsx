@@ -17,6 +17,7 @@ import CampaignsPage from "./pages/CampaignsPage";
 import CampaignDetailPage from "./pages/CampaignDetailPage";
 import CampaignBuilderPage from "./pages/CampaignBuilderPage";
 import ProductsPage from "./pages/ProductsPage";
+import WhatsAppPage from "./pages/WhatsAppPage";
 
 const queryClient = new QueryClient();
 
