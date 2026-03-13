@@ -167,7 +167,13 @@ const WhatsAppPage = () => {
 
     if (data.status) {
       setInstances((prev) =>
-        prev.map((i) => (i.id === instanceId ? { ...i, status: data.status, phone: data.detail?.phoneNumber || i.phone } : i))
+        prev.map((i) => (i.id === instanceId ? {
+          ...i,
+          status: data.status,
+          phone: data.detail?.instance?.owner || data.detail?.phoneNumber || i.phone,
+          profile_name: data.detail?.instance?.profileName || i.profile_name,
+          profile_pic_url: data.detail?.instance?.profilePicUrl || i.profile_pic_url,
+        } : i))
       );
       if (data.status === "connected") {
         toast({ title: "Conectado!", description: "Instância WhatsApp conectada com sucesso." });
