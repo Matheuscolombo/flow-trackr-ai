@@ -216,7 +216,26 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fallback: try matching by owner phone number
+    // Fallback: try matching by api_token (UAZAPI v2 sends token in payload)
+    if (!instanceId) {
+      const webhookToken = (body.token as string) || "";
+      if (webhookToken) {
+        console.log(`[uazapi-webhook] trying match by api_token`);
+        const { data: inst } = await serviceClient
+          .from("whatsapp_instances")
+          .select("id, workspace_id")
+          .eq("api_token", webhookToken)
+          .maybeSingle();
+
+        if (inst) {
+          instanceId = inst.id;
+          workspaceId = inst.workspace_id;
+          console.log(`[uazapi-webhook] matched by api_token -> ${inst.id}`);
+        }
+      }
+    }
+
+    // Fallback 2: try matching by owner phone number
     if (!instanceId) {
       const ownerPhone = (body.owner as string) || "";
       if (ownerPhone) {
