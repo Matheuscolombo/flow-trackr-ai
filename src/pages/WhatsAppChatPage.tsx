@@ -254,20 +254,35 @@ const WhatsAppChatPage = () => {
     return () => clearInterval(interval);
   }, [accessToken, selectedChat, loadMessages]);
 
+  // Get first available instance_id for fallback
+  const fallbackInstanceId = chats.find(c => c.instance_id)?.instance_id || null;
+
   // Send message
   const handleSend = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
     const text = messageText.trim();
+    const instanceId = selectedChat.instance_id || fallbackInstanceId;
+    if (!instanceId) {
+      console.error("[handleSend] No instance_id available");
+      return;
+    }
     setMessageText("");
     setSending(true);
 
-    await postApi("whatsapp-send", accessToken, {
-      instance_id: selectedChat.instance_id,
-      remote_jid: selectedChat.remote_jid,
-      text,
-    });
-
-    setSending(false);
+    try {
+      await postApi("whatsapp-send", accessToken, {
+        instance_id: instanceId,
+        remote_jid: selectedChat.remote_jid,
+        text,
+      });
+      // Reload messages immediately after sending
+      await loadMessages(selectedChat.phone);
+    } catch (err) {
+      console.error("[handleSend] send failed:", err);
+      setMessageText(text); // restore text on failure
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
