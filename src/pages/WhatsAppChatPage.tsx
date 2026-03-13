@@ -348,8 +348,29 @@ const WhatsAppChatPage = () => {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <h2 className="text-sm font-semibold text-foreground">Conversas</h2>
+          <h2 className="text-sm font-semibold text-foreground flex-1">Conversas</h2>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0"
+            onClick={handleSync}
+            disabled={syncing}
+            title="Sincronizar histórico"
+          >
+            {syncing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+          </Button>
         </div>
+
+        {/* Sync progress */}
+        {syncing && syncProgress && (
+          <div className="px-4 py-1.5 bg-primary/5 border-b border-border">
+            <p className="text-[10px] text-primary animate-pulse">{syncProgress}</p>
+          </div>
+        )}
 
         {/* Search */}
         <div className="px-3 py-2 border-b border-border">
