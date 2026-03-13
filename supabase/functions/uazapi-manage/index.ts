@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const baseUrl = UAZAPI_URL.replace(/\/$/, "");
+      const baseUrl = (inst.server_url || UAZAPI_URL).replace(/\/$/, "");
       const connectBody: Record<string, string> = {};
       if (body.phone) connectBody.phone = body.phone;
 
