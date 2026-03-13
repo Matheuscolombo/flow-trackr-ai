@@ -505,13 +505,23 @@ const WhatsAppChatPage = () => {
             }
           });
 
-          // If this chat is selected, add message
+          // If this chat is selected, add message (smart scroll)
           setSelectedChat((current) => {
             if (current && current.phone === newMsg.phone) {
               setMessages((prev) => {
                 if (prev.some((m) => m.message_id === newMsg.message_id)) return prev;
                 const updated = [...prev, newMsg];
-                setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+                // Only auto-scroll if user is near the bottom
+                setTimeout(() => {
+                  const el = messagesEndRef.current;
+                  if (!el) return;
+                  const container = el.closest('[data-radix-scroll-area-viewport]');
+                  if (!container) { el.scrollIntoView({ behavior: "smooth" }); return; }
+                  const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+                  if (distFromBottom < 150) {
+                    el.scrollIntoView({ behavior: "smooth" });
+                  }
+                }, 50);
                 return updated;
               });
             }
