@@ -889,6 +889,8 @@ export type Database = {
           instance_display_name: string
           instance_name: string
           phone: string | null
+          profile_name: string | null
+          profile_pic_url: string | null
           server_url: string | null
           status: string
           updated_at: string
@@ -901,6 +903,8 @@ export type Database = {
           instance_display_name: string
           instance_name: string
           phone?: string | null
+          profile_name?: string | null
+          profile_pic_url?: string | null
           server_url?: string | null
           status?: string
           updated_at?: string
@@ -913,6 +917,8 @@ export type Database = {
           instance_display_name?: string
           instance_name?: string
           phone?: string | null
+          profile_name?: string | null
+          profile_pic_url?: string | null
           server_url?: string | null
           status?: string
           updated_at?: string
