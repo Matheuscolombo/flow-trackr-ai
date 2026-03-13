@@ -1,63 +1,43 @@
 
-Diagnóstico objetivo (confirmado pelos logs/rede):
-1) O envio está falhando no backend, não no frontend.
-- Requisição do chat chega em `whatsapp-send` com payload correto.
-- Resposta atual: `502 {"error":"All send attempts failed","detail":{"code":405,"message":"Method Not Allowed"}}`.
 
-2) Causa raiz:
-- A função `whatsapp-send` está tentando endpoints legados (`/message/sendText/...`, `/message/sendMessage/...`).
-- Pela documentação oficial da UAZAPI v2, o endpoint de texto é `POST /send/text` com header `token` e body `{ number, text }`.
-- Isso explica o 405 em todas as tentativas atuais.
+## Problema: CSV com schema duplo
 
-Plano de correção definitiva:
-1) Corrigir `whatsapp-send` para priorizar contrato v2 oficial
-- Trocar tentativa principal para:
-  - URL: `${baseUrl}/send/text`
-  - Método: `POST`
-  - Headers: `token` (e fallback controlado para variações de header)
-  - Body: `{ number, text }`
-- Manter fallback legado apenas como contingência, não como caminho principal.
-- Adicionar fallback de base URL com `/api` (ex.: `${baseUrl}/api/send/text`) para ambientes proxyados.
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-2) Tornar envio robusto e observável
-- Refatorar matriz de tentativas com prioridade clara (v2 primeiro).
-- Melhorar log por tentativa: URL, header usado, status, trecho da resposta.
-- Melhorar parsing de resposta (JSON e texto puro) para não perder diagnóstico.
-- Em erro final, retornar lista resumida das tentativas (sem expor segredo), para depuração rápida.
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-3) Persistência outbound mais correta
-- Em sucesso, extrair `message_id` retornado pela API (quando disponível) e salvar no banco.
-- Salvar `payload_raw` com resposta real do provedor.
-- Se API não retornar id, usar fallback local como hoje.
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-4) Ajuste UX no chat (evitar frustração)
-- Em `WhatsAppChatPage.tsx`, manter o texto no input até confirmar sucesso (hoje limpa antes e restaura no erro).
-- Exibir feedback de erro amigável para o usuário (toast/alerta), além do log no console.
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-Detalhes técnicos (arquivos-alvo):
-- `supabase/functions/whatsapp-send/index.ts`
-  - Reordenar/atualizar tentativas de endpoint.
-  - Implementar helper de tentativas v2 + fallback `/api`.
-  - Melhorar parsing/retorno de erro.
-- `src/pages/WhatsAppChatPage.tsx`
-  - Ajustar fluxo de `handleSend` (limpar input só após sucesso + feedback visual de erro).
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-Escopo deliberadamente fora desta correção:
-- Sem mudanças de schema/RLS.
-- Sem mexer em webhook/sync agora (o problema reportado atual é envio; a falha real está no endpoint de send).
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-Validação fim a fim (após implementar):
-1) Teste técnico:
-- Chamar `whatsapp-send` com payload real:
-  - `instance_id: 7709c758-5db2-4178-bf6f-d27e194c69d7`
-  - `remote_jid: 554498685747@s.whatsapp.net`
-  - `text: "oi"`
-- Esperado: HTTP 200 + `ok: true` + tentativa vencedora em `/send/text` (ou `/api/send/text` fallback).
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
 
-2) Teste de dados:
-- Confirmar nova linha `outbound` em `whatsapp_messages` com `body="oi"` e `status="sent"`.
+### Detalhes técnicos
 
-3) Teste de UI:
-- Enviar pelo chat na tela `/whatsapp/chat`.
-- Mensagem deve aparecer no thread sem erro 502.
-- Em falha real, UI deve mostrar erro claro sem “sumir” com o texto digitado.
+No `parseCSV`, adicionar detecção de header duplicado:
+```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
+```
+
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
+
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
+
