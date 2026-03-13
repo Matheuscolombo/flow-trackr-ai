@@ -199,7 +199,7 @@ Deno.serve(async (req) => {
 
     const direction = fromMe ? "outbound" : "inbound";
 
-    // Find instance by name
+    // Find instance by name or by owner phone
     let instanceId: string | null = null;
     let workspaceId: string | null = null;
 
@@ -216,9 +216,29 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Fallback: try matching by owner phone number
+    if (!instanceId) {
+      const ownerPhone = (body.owner as string) || "";
+      if (ownerPhone) {
+        const normalizedOwner = ownerPhone.replace(/\D/g, "");
+        console.log(`[uazapi-webhook] trying match by owner phone: ${normalizedOwner}`);
+        const { data: inst } = await serviceClient
+          .from("whatsapp_instances")
+          .select("id, workspace_id, phone")
+          .like("phone", `%${normalizedOwner.slice(-10)}%`)
+          .maybeSingle();
+
+        if (inst) {
+          instanceId = inst.id;
+          workspaceId = inst.workspace_id;
+          console.log(`[uazapi-webhook] matched by phone: ${inst.phone} -> ${inst.id}`);
+        }
+      }
+    }
+
     // Se não encontrou instância registrada, ignorar
     if (!instanceId) {
-      console.log(`[uazapi-webhook] ignoring: instance "${instanceName}" not registered`);
+      console.log(`[uazapi-webhook] ignoring: instance "${instanceName}" not registered, owner="${body.owner}"`);
       return new Response(JSON.stringify({ ok: true, action: "instance_not_registered" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
