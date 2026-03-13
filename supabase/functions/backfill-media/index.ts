@@ -147,9 +147,12 @@ Deno.serve(async (req) => {
       .from("whatsapp-media")
       .getPublicUrl(storagePath);
 
+    // Add cache-buster to force CDN to serve fresh file
+    const freshUrl = `${publicData.publicUrl}?v=${Date.now()}`;
+
     await serviceClient
       .from("whatsapp_messages")
-      .update({ media_url: publicData.publicUrl })
+      .update({ media_url: freshUrl })
       .eq("id", msg.id);
 
     console.log(`[backfill] success: ${msg.message_id} via ${downloadMethod} (${blob.size} bytes)`);
