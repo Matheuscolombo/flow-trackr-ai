@@ -52,19 +52,43 @@ function normalizeInstanceStatus(rawState: unknown): string {
   return "disconnected";
 }
 
-function extractConnectionState(payload: UazJson): { status: string; phone: string | null } {
+function extractConnectionState(payload: UazJson): {
+  status: string;
+  phone: string | null;
+  profileName: string | null;
+  profilePicUrl: string | null;
+} {
+  // UAZAPI v2 response: { instance: { status, owner, profileName, profilePicUrl }, status: { connected, loggedIn } }
+  const topInstance = (payload.instance && typeof payload.instance === "object" ? payload.instance : {}) as UazJson;
+  const topStatus = (payload.status && typeof payload.status === "object" ? payload.status : null) as UazJson | null;
   const data = (payload.data && typeof payload.data === "object" ? payload.data : {}) as UazJson;
   const dataInstance = (data.instance && typeof data.instance === "object" ? data.instance : {}) as UazJson;
 
-  const rawState =
-    payload.state ??
-    payload.status ??
-    data.state ??
-    data.status ??
-    dataInstance.state ??
-    dataInstance.status;
+  // Determine connected status
+  let finalStatus = "disconnected";
 
+  // UAZAPI v2: check status.connected boolean first
+  if (topStatus && topStatus.connected === true) {
+    finalStatus = "connected";
+  } else {
+    // Fallback: check string-based status fields
+    const rawState =
+      topInstance.status ??
+      payload.state ??
+      (typeof payload.status === "string" ? payload.status : null) ??
+      data.state ??
+      data.status ??
+      dataInstance.state ??
+      dataInstance.status;
+
+    finalStatus = normalizeInstanceStatus(rawState);
+  }
+
+  // Extract phone
   const rawPhone =
+    topInstance.owner ??
+    topInstance.phoneNumber ??
+    topInstance.phone ??
     payload.phoneNumber ??
     payload.phone ??
     data.phoneNumber ??
@@ -74,9 +98,24 @@ function extractConnectionState(payload: UazJson): { status: string; phone: stri
     dataInstance.phone ??
     dataInstance.number;
 
+  // Extract profile info
+  const profileName =
+    topInstance.profileName ??
+    dataInstance.profileName ??
+    data.profileName ??
+    null;
+
+  const profilePicUrl =
+    topInstance.profilePicUrl ??
+    dataInstance.profilePicUrl ??
+    data.profilePicUrl ??
+    null;
+
   return {
-    status: normalizeInstanceStatus(rawState),
+    status: finalStatus,
     phone: rawPhone ? String(rawPhone) : null,
+    profileName: profileName ? String(profileName) : null,
+    profilePicUrl: profilePicUrl ? String(profilePicUrl) : null,
   };
 }
 
