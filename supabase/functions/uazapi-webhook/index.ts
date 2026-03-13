@@ -75,13 +75,14 @@ async function extractBlobFromResponse(
 
   if (ct.includes("application/json")) {
     const json = await res.json();
-    const base64 = json.base64 || json.data || json.media;
+    // UAZAPI v2 returns base64Data and/or fileURL
+    const base64 = json.base64Data || json.base64 || json.data || json.media;
     if (base64 && typeof base64 === "string") {
       const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
       const blob = new Blob([binary], { type: mimeType || "application/octet-stream" });
       if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
     }
-    const dlUrl = json.url || json.mediaUrl || json.fileUrl;
+    const dlUrl = json.fileURL || json.url || json.mediaUrl || json.fileUrl;
     if (dlUrl && typeof dlUrl === "string") {
       const dlRes = await fetch(dlUrl, { redirect: "follow" });
       if (dlRes.ok && isValidMediaResponse(dlRes)) {
