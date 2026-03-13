@@ -499,9 +499,16 @@ Deno.serve(async (req) => {
 
       // Update status in DB
       const phone = parsed.phone || inst.phone;
+      const updateData: Record<string, unknown> = {
+        status: newStatus,
+        phone: phone || inst.phone,
+      };
+      if (parsed.profileName) updateData.profile_name = parsed.profileName;
+      if (parsed.profilePicUrl) updateData.profile_pic_url = parsed.profilePicUrl;
+
       await serviceClient
         .from("whatsapp_instances")
-        .update({ status: newStatus, phone: phone || inst.phone })
+        .update(updateData)
         .eq("id", instanceId);
 
       return new Response(JSON.stringify({ status: newStatus, detail: stateResult.data }), {
