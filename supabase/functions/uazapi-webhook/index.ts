@@ -156,12 +156,13 @@ Deno.serve(async (req) => {
     // Ignorar eventos que não são mensagens
     const messageEvents = [
       "messages.upsert",
+      "messages",
       "message",
       "messages.update",
       "message.any",
       "onMessage",
       "onMessageReceived",
-      "", // empty = accept (UAZAPI v2 may not always set EventType for messages)
+      "", // empty = accept
     ];
     if (event && !messageEvents.includes(event)) {
       console.log(`[uazapi-webhook] ignoring event: ${event}`);
