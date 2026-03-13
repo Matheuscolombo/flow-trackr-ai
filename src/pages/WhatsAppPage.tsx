@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   MessageSquare,
@@ -14,6 +14,8 @@ import {
   Check,
   Download,
   MessagesSquare,
+  Pencil,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +57,7 @@ interface WhatsAppInstance {
   updated_at: string;
   profile_name: string | null;
   profile_pic_url: string | null;
+  status_text: string | null;
 }
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
