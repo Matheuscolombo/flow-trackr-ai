@@ -53,6 +53,8 @@ interface WhatsAppInstance {
   api_token: string | null;
   created_at: string;
   updated_at: string;
+  profile_name: string | null;
+  profile_pic_url: string | null;
 }
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
