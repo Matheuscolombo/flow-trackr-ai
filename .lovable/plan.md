@@ -1,56 +1,43 @@
 
 
-## Plan: Live WhatsApp Chat inside Sentinel
+## Problema: CSV com schema duplo
 
-### What we have today
-- `whatsapp_instances` table with per-instance `server_url` and `api_token`
-- `whatsapp_messages` table storing all messages (inbound/outbound) with `phone`, `direction`, `body`, `message_type`, `timestamp_msg`, `remote_jid`, `instance_id`
-- `uazapi-webhook` edge function already receiving and storing inbound messages
-- UAZAPI SSE endpoint (`GET /sse?token=X&events=messages`) for real-time events
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-### What we need to build
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-**1. Edge Function: `whatsapp-send` (new)**
-- Accepts `{ instance_id, remote_jid, text }` via POST
-- Looks up instance token + server_url from DB
-- Calls UAZAPI `POST /message/sendText` with the token
-- Saves the outbound message to `whatsapp_messages`
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-**2. Edge Function: `whatsapp-chats` (new)**
-- `action=list_chats`: Returns distinct conversations (grouped by `phone`) with last message preview, unread count, and contact name (from leads table if available)
-- `action=messages`: Returns paginated messages for a specific `phone`/`remote_jid`
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-**3. Enable Realtime on `whatsapp_messages`**
-- `ALTER PUBLICATION supabase_realtime ADD TABLE public.whatsapp_messages;`
-- Frontend subscribes to `postgres_changes` filtered by `workspace_id` — new messages appear instantly without SSE proxy
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-**4. Frontend: Chat UI (`src/pages/WhatsAppChatPage.tsx`)**
-- Three-panel layout (like the IAutomatize screenshot):
-  - **Left panel**: Conversation list (contacts with last message, sorted by recency)
-  - **Center panel**: Message thread for selected conversation (bubbles, timestamps)
-  - **Right panel** (optional, later): Contact info from leads table
-- Real-time updates via Supabase Realtime subscription on `whatsapp_messages`
-- Input bar at bottom to send messages via `whatsapp-send` edge function
-- Instance selector dropdown (if user has multiple instances)
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-**5. Routing**
-- Add `/whatsapp/chat` route or embed as a tab within the existing WhatsApp page
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
 
-### Why Supabase Realtime instead of UAZAPI SSE directly?
-- SSE from UAZAPI requires the instance token (secret) — can't expose it to the browser
-- We already store messages via the webhook — Supabase Realtime on `whatsapp_messages` gives us real-time without proxying SSE
-- Simpler architecture: webhook writes → Realtime broadcasts → frontend updates
+### Detalhes técnicos
 
-### Technical flow
-```text
-Inbound:  UAZAPI → uazapi-webhook → INSERT whatsapp_messages → Realtime → UI updates
-Outbound: UI → whatsapp-send → UAZAPI sendText + INSERT whatsapp_messages → Realtime → UI updates
+No `parseCSV`, adicionar detecção de header duplicado:
+```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
 ```
 
-### Implementation order
-1. DB migration: enable realtime on `whatsapp_messages`
-2. Edge function `whatsapp-send` for sending messages
-3. Edge function `whatsapp-chats` for listing conversations and message history
-4. Frontend chat UI with realtime subscription
-5. Add route and navigation
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
+
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   MessageSquare,
   Plus,
@@ -12,6 +13,7 @@ import {
   Copy,
   Check,
   Download,
+  MessagesSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,6 +79,7 @@ async function callManage(action: string, params?: Record<string, string>, body?
 
 const WhatsAppPage = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -232,6 +235,10 @@ const WhatsAppPage = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => navigate("/whatsapp/chat")}>
+            <MessagesSquare className="w-3.5 h-3.5 mr-1.5" />
+            Chat
+          </Button>
           <Button size="sm" variant="outline" onClick={fetchInstances} disabled={loading}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
             Atualizar
