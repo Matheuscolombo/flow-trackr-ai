@@ -101,6 +101,9 @@ Deno.serve(async (req) => {
         }
       }
 
+      // For messages action, also fetch payload_raw to extract body fallback
+      
+
       // Enrich with lead names
       const leadIds = [...new Set([...chatMap.values()].filter(c => c.lead_id).map(c => c.lead_id!))];
       let leadNames: Record<string, string> = {};
