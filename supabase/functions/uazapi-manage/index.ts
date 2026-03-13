@@ -279,23 +279,32 @@ Deno.serve(async (req) => {
       let detectedPhone: string | null = null;
 
       try {
-        const stateRes = await fetch(`${baseUrl}/instance/connectionState`, {
-          headers: { "token": token },
+        const stateResult = await fetchConnectionState({
+          baseUrl,
+          instanceName,
+          token,
+          apiKey: UAZAPI_API_KEY,
         });
-        const stateData = await stateRes.json();
-        console.log("[uazapi-manage] import validation:", JSON.stringify(stateData));
 
-        if (!stateRes.ok) {
-          return new Response(JSON.stringify({ error: "Invalid token or instance not found on UAZAPI", detail: stateData }), {
+        if (!stateResult.ok) {
+          return new Response(JSON.stringify({
+            error: "Invalid token or instance not found on UAZAPI",
+            detail: stateResult.data,
+            debug: {
+              endpoint: stateResult.endpoint,
+              auth_header: stateResult.authHeader,
+              status_code: stateResult.status,
+            },
+          }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        detectedStatus = stateData.state === "open" ? "connected"
-          : stateData.state === "connecting" ? "connecting"
-          : "disconnected";
-        detectedPhone = stateData.phoneNumber || stateData.phone || null;
+        console.log("[uazapi-manage] import validation:", JSON.stringify(stateResult.data));
+        const parsed = extractConnectionState(stateResult.data);
+        detectedStatus = parsed.status;
+        detectedPhone = parsed.phone;
       } catch (e) {
         console.error("[uazapi-manage] import validation error:", e);
         return new Response(JSON.stringify({ error: "Could not reach UAZAPI to validate token" }), {
