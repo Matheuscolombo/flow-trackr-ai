@@ -909,9 +909,13 @@ const WhatsAppChatPage = () => {
                     selectedChat?.phone === chat.phone ? "bg-muted" : ""
                   }`}
                 >
-                  <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                    <User className="w-4 h-4 text-primary" />
-                  </div>
+                  {chat.profile_pic_url ? (
+                    <img src={chat.profile_pic_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 mt-0.5" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>'); }} />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <User className="w-4 h-4 text-primary" />
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium text-foreground truncate">
