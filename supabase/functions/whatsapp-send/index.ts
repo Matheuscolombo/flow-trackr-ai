@@ -250,7 +250,12 @@ Deno.serve(async (req) => {
       // Persist outbound message
       const phone = normPhone(remote_jid);
       const apiMsgId = typeof resBody === "object" && resBody !== null
-        ? (resBody as Record<string, unknown>).messageId || (resBody as Record<string, unknown>).id || null
+        ? (resBody as Record<string, unknown>).messageId
+          || (resBody as Record<string, unknown>).messageid
+          || (resBody as Record<string, unknown>).id
+          || ((resBody as Record<string, unknown>).response as Record<string, unknown> | undefined)?.messageId
+          || ((resBody as Record<string, unknown>).response as Record<string, unknown> | undefined)?.messageid
+          || null
         : null;
       const messageId = apiMsgId ? String(apiMsgId) : `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
