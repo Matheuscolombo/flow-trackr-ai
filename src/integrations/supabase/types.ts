@@ -889,6 +889,7 @@ export type Database = {
           instance_display_name: string
           instance_name: string
           phone: string | null
+          server_url: string | null
           status: string
           updated_at: string
           workspace_id: string
@@ -900,6 +901,7 @@ export type Database = {
           instance_display_name: string
           instance_name: string
           phone?: string | null
+          server_url?: string | null
           status?: string
           updated_at?: string
           workspace_id: string
@@ -911,6 +913,7 @@ export type Database = {
           instance_display_name?: string
           instance_name?: string
           phone?: string | null
+          server_url?: string | null
           status?: string
           updated_at?: string
           workspace_id?: string

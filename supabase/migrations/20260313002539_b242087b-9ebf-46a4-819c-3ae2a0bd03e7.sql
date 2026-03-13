@@ -1,0 +1,1 @@
+ALTER TABLE public.whatsapp_instances ADD COLUMN server_url text;
