@@ -80,6 +80,10 @@ async function fetchApi(path: string, token: string) {
       },
     }
   );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -96,6 +100,10 @@ async function postApi(path: string, token: string, body: unknown) {
       body: JSON.stringify(body),
     }
   );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
