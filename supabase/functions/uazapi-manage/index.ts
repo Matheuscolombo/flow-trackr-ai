@@ -142,6 +142,7 @@ Deno.serve(async (req) => {
       const instanceName = (body.name || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
       const displayName = (body.display_name || body.name || "").trim();
       const token = (body.token || "").trim();
+      const serverUrl = (body.server_url || "").trim() || null;
 
       if (!instanceName || !token) {
         return new Response(JSON.stringify({ error: "name and token are required" }), {
@@ -150,8 +151,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Validate token by checking connection state
-      const baseUrl = UAZAPI_URL.replace(/\/$/, "");
+      // Validate token by checking connection state — use provided server_url or fallback
+      const baseUrl = (serverUrl || UAZAPI_URL).replace(/\/$/, "");
       let detectedStatus = "disconnected";
       let detectedPhone: string | null = null;
 
