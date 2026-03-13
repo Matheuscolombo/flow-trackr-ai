@@ -505,13 +505,23 @@ const WhatsAppChatPage = () => {
             }
           });
 
-          // If this chat is selected, add message
+          // If this chat is selected, add message (smart scroll)
           setSelectedChat((current) => {
             if (current && current.phone === newMsg.phone) {
               setMessages((prev) => {
                 if (prev.some((m) => m.message_id === newMsg.message_id)) return prev;
                 const updated = [...prev, newMsg];
-                setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+                // Only auto-scroll if user is near the bottom
+                setTimeout(() => {
+                  const el = messagesEndRef.current;
+                  if (!el) return;
+                  const container = el.closest('[data-radix-scroll-area-viewport]');
+                  if (!container) { el.scrollIntoView({ behavior: "smooth" }); return; }
+                  const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+                  if (distFromBottom < 150) {
+                    el.scrollIntoView({ behavior: "smooth" });
+                  }
+                }, 50);
                 return updated;
               });
             }
@@ -533,11 +543,7 @@ const WhatsAppChatPage = () => {
     return () => clearInterval(interval);
   }, [accessToken, loadChats]);
 
-  useEffect(() => {
-    if (!accessToken || !selectedChat) return;
-    const interval = setInterval(() => { loadMessages(selectedChat.phone); }, 10000);
-    return () => clearInterval(interval);
-  }, [accessToken, selectedChat, loadMessages]);
+  // Message polling removed — realtime handles new messages
 
   const fallbackInstanceId = chats.find(c => c.instance_id)?.instance_id || null;
 
@@ -717,7 +723,7 @@ const WhatsAppChatPage = () => {
       {lightboxUrl && (
         <ImageModal src={lightboxUrl} onClose={() => setLightboxUrl(null)} />
       )}
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-screen overflow-hidden">
       {/* Left: Chat List */}
       <div
         className={`w-full md:w-80 lg:w-96 border-r border-border flex flex-col shrink-0 ${
