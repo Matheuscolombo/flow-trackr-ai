@@ -379,6 +379,16 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Download media to permanent storage if URL is from WhatsApp CDN
+    let permanentMediaUrl = mediaUrl;
+    if (mediaUrl && workspaceId) {
+      const stored = await downloadAndStoreMedia(serviceClient, mediaUrl, workspaceId, messageId, mediaMimeType);
+      if (stored) {
+        permanentMediaUrl = stored;
+      }
+      // If download fails, keep the original CDN URL as fallback
+    }
+
     // Upsert message
     const { error: insertErr } = await serviceClient
       .from("whatsapp_messages")
@@ -393,7 +403,7 @@ Deno.serve(async (req) => {
           direction,
           message_type: messageType,
           body: textBody || null,
-          media_url: mediaUrl,
+          media_url: permanentMediaUrl,
           media_mime_type: mediaMimeType,
           status: direction === "inbound" ? "received" : "sent",
           timestamp_msg: timestampMsg,
@@ -410,7 +420,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[uazapi-webhook] stored ${direction} ${messageType} from ${phone} body="${(textBody || "").slice(0, 30)}" media=${!!mediaUrl} lead=${lead?.id || "unknown"}`);
+    console.log(`[uazapi-webhook] stored ${direction} ${messageType} from ${phone} body="${(textBody || "").slice(0, 30)}" media=${!!permanentMediaUrl} lead=${lead?.id || "unknown"}`);
 
     return new Response(
       JSON.stringify({ ok: true, phone, lead_id: lead?.id || null, direction, message_type: messageType }),
