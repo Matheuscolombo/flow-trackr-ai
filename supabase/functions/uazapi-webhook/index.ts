@@ -67,7 +67,7 @@ function extractMessageData(body: Record<string, unknown>) {
   // Extract message timestamp  
   const messageTimestamp = topMessage.messageTimestamp || data.messageTimestamp;
 
-  console.log(`[extract] key=${JSON.stringify(key)}, chat=${JSON.stringify(chat)}, msgKey=${JSON.stringify(msgKey)}`);
+  console.log(`[extract] remoteJid=${remoteJid} msgId=${messageId} fromMe=${fromMe}`);
 
   // Extract body from message content
   let textBody = "";
