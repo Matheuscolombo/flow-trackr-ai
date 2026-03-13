@@ -136,6 +136,77 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── IMPORT existing instance ──
+    if (req.method === "POST" && action === "import") {
+      const body = await req.json();
+      const instanceName = (body.name || "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+      const displayName = (body.display_name || body.name || "").trim();
+      const token = (body.token || "").trim();
+
+      if (!instanceName || !token) {
+        return new Response(JSON.stringify({ error: "name and token are required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Validate token by checking connection state
+      const baseUrl = UAZAPI_URL.replace(/\/$/, "");
+      let detectedStatus = "disconnected";
+      let detectedPhone: string | null = null;
+
+      try {
+        const stateRes = await fetch(`${baseUrl}/instance/connectionState`, {
+          headers: { "token": token },
+        });
+        const stateData = await stateRes.json();
+        console.log("[uazapi-manage] import validation:", JSON.stringify(stateData));
+
+        if (!stateRes.ok) {
+          return new Response(JSON.stringify({ error: "Invalid token or instance not found on UAZAPI", detail: stateData }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        detectedStatus = stateData.state === "open" ? "connected"
+          : stateData.state === "connecting" ? "connecting"
+          : "disconnected";
+        detectedPhone = stateData.phoneNumber || stateData.phone || null;
+      } catch (e) {
+        console.error("[uazapi-manage] import validation error:", e);
+        return new Response(JSON.stringify({ error: "Could not reach UAZAPI to validate token" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Save to DB
+      const { data: saved, error: saveErr } = await serviceClient
+        .from("whatsapp_instances")
+        .insert({
+          workspace_id: workspace.id,
+          instance_name: instanceName,
+          instance_display_name: displayName || instanceName,
+          status: detectedStatus,
+          api_token: token,
+          phone: detectedPhone,
+        })
+        .select()
+        .single();
+
+      if (saveErr) {
+        return new Response(JSON.stringify({ error: saveErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ instance: saved, status: detectedStatus }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ── CONNECT (QR Code or Pairing Code) ──
     if (req.method === "POST" && action === "connect") {
       const body = await req.json();
