@@ -128,10 +128,15 @@ const WhatsAppChatPage = () => {
   // Load chat list
   const loadChats = useCallback(async () => {
     if (!accessToken) return;
-    setLoadingChats(true);
-    const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
-    setChats(data.chats || []);
-    setLoadingChats(false);
+    try {
+      setLoadingChats(true);
+      const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
+      setChats(data.chats || []);
+    } catch (e) {
+      console.error("[loadChats] error:", e);
+    } finally {
+      setLoadingChats(false);
+    }
   }, [accessToken]);
 
   useEffect(() => {
