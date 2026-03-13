@@ -91,6 +91,7 @@ const WhatsAppPage = () => {
   const [importName, setImportName] = useState("");
   const [importDisplayName, setImportDisplayName] = useState("");
   const [importToken, setImportToken] = useState("");
+  const [importServerUrl, setImportServerUrl] = useState("https://tracker1.uazapi.com");
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
