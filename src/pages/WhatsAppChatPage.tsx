@@ -18,6 +18,9 @@ import {
   Pause,
   Volume2,
   ZoomIn,
+  Clock,
+  Check,
+  CheckCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +98,29 @@ function detectMediaType(file: File): string {
   if (file.type.startsWith("audio/")) return "audio";
   if (file.type.startsWith("video/")) return "video";
   return "document";
+}
+
+/** Message status indicator (✓ ✓✓ blue ✓✓) */
+function MessageStatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case "pending":
+      return <Clock className="w-3 h-3" />;
+    case "sent":
+    case "SERVER_ACK":
+      return <Check className="w-3 h-3" />;
+    case "delivered":
+    case "DELIVERY_ACK":
+      return <CheckCheck className="w-3 h-3" />;
+    case "read":
+    case "READ":
+    case "PLAYED":
+      return <CheckCheck className="w-3 h-3 text-blue-400" />;
+    case "failed":
+    case "ERROR":
+      return <span className="text-[9px]">!</span>;
+    default:
+      return <Check className="w-3 h-3" />;
+  }
 }
 
 async function fetchApi(path: string, token: string) {
@@ -459,7 +485,22 @@ const WhatsAppChatPage = () => {
           filter: `workspace_id=eq.${workspaceId}`,
         },
         (payload) => {
+          const eventType = payload.eventType;
           const newMsg = payload.new as Message;
+
+          // Handle UPDATE events (status changes)
+          if (eventType === "UPDATE") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === newMsg.message_id
+                  ? { ...m, status: newMsg.status }
+                  : m
+              )
+            );
+            return;
+          }
+
+          // INSERT events below
 
           // Update chat list
           setChats((prev) => {
@@ -547,13 +588,34 @@ const WhatsAppChatPage = () => {
 
   const fallbackInstanceId = chats.find(c => c.instance_id)?.instance_id || null;
 
-  // Send text message
+  // Send text message (optimistic)
   const handleSend = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
     const text = messageText.trim();
     const instanceId = selectedChat.instance_id || fallbackInstanceId;
     if (!instanceId) return;
-    setSending(true);
+
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      phone: selectedChat.phone,
+      remote_jid: selectedChat.remote_jid,
+      body: text,
+      direction: "outbound",
+      message_type: "text",
+      timestamp_msg: new Date().toISOString(),
+      status: "pending",
+      media_url: null,
+      media_mime_type: null,
+      lead_id: selectedChat.lead_id || null,
+      instance_id: instanceId,
+      message_id: tempId,
+    };
+
+    // Add optimistic message and clear input immediately
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setMessageText("");
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     try {
       const res = await postApi("whatsapp-send", accessToken, {
@@ -562,21 +624,36 @@ const WhatsAppChatPage = () => {
         text,
       });
       if (res && res.ok) {
-        setMessageText("");
-        await loadMessages(selectedChat.phone);
+        // Update optimistic message with real message_id and status
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? { ...m, message_id: res.message_id || tempId, status: "sent" }
+              : m
+          )
+        );
       } else {
+        // Mark as failed
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId ? { ...m, status: "failed" } : m
+          )
+        );
         const detail = res?.attempts?.map((a: any) => `${a.label}: ${a.status}`).join(", ") || res?.error || "Erro desconhecido";
         alert(`Falha ao enviar mensagem. Detalhes: ${detail}`);
       }
     } catch (err) {
       console.error("[handleSend] send failed:", err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, status: "failed" } : m
+        )
+      );
       alert("Erro ao enviar mensagem. Verifique sua conexão.");
-    } finally {
-      setSending(false);
     }
   };
 
-  // Send file
+  // Send file (optimistic)
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedChat || uploading) return;
@@ -587,44 +664,78 @@ const WhatsAppChatPage = () => {
     // Reset input
     if (fileInputRef.current) fileInputRef.current.value = "";
 
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const mediaType = detectMediaType(file);
+    const localPreviewUrl = URL.createObjectURL(file);
+
+    const optimisticMsg: Message = {
+      id: tempId,
+      phone: selectedChat.phone,
+      remote_jid: selectedChat.remote_jid,
+      body: messageText.trim() || file.name,
+      direction: "outbound",
+      message_type: mediaType,
+      timestamp_msg: new Date().toISOString(),
+      status: "pending",
+      media_url: mediaType === "image" ? localPreviewUrl : null,
+      media_mime_type: file.type || null,
+      lead_id: selectedChat.lead_id || null,
+      instance_id: instanceId,
+      message_id: tempId,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    const captionText = messageText.trim();
+    setMessageText("");
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
     setUploading(true);
     try {
-      // Upload to storage
       const ext = file.name.split(".").pop() || "bin";
       const path = `${workspaceId}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       
-      const { data: uploadData, error: uploadErr } = await supabase.storage
+      const { error: uploadErr } = await supabase.storage
         .from("whatsapp-media")
         .upload(path, file, { contentType: file.type });
 
       if (uploadErr) throw new Error(uploadErr.message);
 
-      // Get public URL
       const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(path);
       const publicUrl = urlData.publicUrl;
-
       if (!publicUrl) throw new Error("Não foi possível gerar URL pública");
-
-      const mediaType = detectMediaType(file);
 
       const res = await postApi("whatsapp-send", accessToken, {
         instance_id: instanceId,
         remote_jid: selectedChat.remote_jid,
         mediaUrl: publicUrl,
         mediaType,
-        caption: messageText.trim() || undefined,
+        caption: captionText || undefined,
         fileName: file.name,
       });
 
       if (res && res.ok) {
-        setMessageText("");
-        await loadMessages(selectedChat.phone);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? { ...m, message_id: res.message_id || tempId, status: "sent", media_url: publicUrl }
+              : m
+          )
+        );
       } else {
-        const detail = res?.error || "Erro ao enviar arquivo";
-        alert(`Falha ao enviar arquivo: ${detail}`);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId ? { ...m, status: "failed" } : m
+          )
+        );
+        alert(`Falha ao enviar arquivo: ${res?.error || "Erro"}`);
       }
     } catch (err) {
       console.error("[handleFileSelect] error:", err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, status: "failed" } : m
+        )
+      );
       alert("Erro ao enviar arquivo. Verifique sua conexão.");
     } finally {
       setUploading(false);
@@ -898,15 +1009,20 @@ const WhatsAppChatPage = () => {
                             {msg.message_type === "text" && !msg.body && (
                               <p className="text-[10px] italic opacity-70">[mensagem vazia]</p>
                             )}
-                            <p
-                              className={`text-[9px] mt-0.5 text-right ${
+                            <div
+                              className={`flex items-center justify-end gap-1 mt-0.5 ${
                                 msg.direction === "outbound"
                                   ? "text-primary-foreground/60"
                                   : "text-muted-foreground"
                               }`}
                             >
-                              {formatMessageTime(msg.timestamp_msg)}
-                            </p>
+                              <span className="text-[9px]">
+                                {formatMessageTime(msg.timestamp_msg)}
+                              </span>
+                              {msg.direction === "outbound" && (
+                                <MessageStatusIcon status={msg.status} />
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}

@@ -389,6 +389,48 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Handle status update events (messages_update / messages.update)
+    const statusEvents = ["messages.update", "messages_update", "message.update"];
+    if (statusEvents.includes(event)) {
+      // Extract status from payload
+      const topMessage = (body.message || body.data || {}) as Record<string, unknown>;
+      const newStatus = (topMessage.status as string) || "";
+      const statusMsgId = messageId || (topMessage.id as string) || (topMessage.messageid as string) || "";
+
+      if (statusMsgId && newStatus) {
+        // Map UAZAPI status values to our status
+        const statusMap: Record<string, string> = {
+          "SERVER_ACK": "sent",
+          "DELIVERY_ACK": "delivered", 
+          "READ": "read",
+          "PLAYED": "read",
+          "ERROR": "failed",
+          "sent": "sent",
+          "delivered": "delivered",
+          "read": "read",
+          "played": "read",
+          "failed": "failed",
+        };
+        const mappedStatus = statusMap[newStatus] || newStatus;
+
+        console.log(`[uazapi-webhook] status update: msgId=${statusMsgId} status=${newStatus} -> ${mappedStatus}`);
+
+        const { error: updateErr } = await serviceClient
+          .from("whatsapp_messages")
+          .update({ status: mappedStatus })
+          .eq("message_id", statusMsgId);
+
+        if (updateErr) {
+          console.error("[uazapi-webhook] status update error:", updateErr);
+        }
+
+        return new Response(
+          JSON.stringify({ ok: true, action: "status_updated", message_id: statusMsgId, status: mappedStatus }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Ignore non-message events
     const messageEvents = [
       "messages.upsert", "messages", "message", "messages.update",
