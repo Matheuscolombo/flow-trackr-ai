@@ -192,6 +192,7 @@ Deno.serve(async (req) => {
           status: detectedStatus,
           api_token: token,
           phone: detectedPhone,
+          server_url: serverUrl,
         })
         .select()
         .single();
