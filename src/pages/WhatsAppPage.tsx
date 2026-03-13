@@ -188,6 +188,7 @@ const WhatsAppPage = () => {
       name: importName.trim(),
       display_name: importDisplayName.trim() || importName.trim(),
       token: importToken.trim(),
+      server_url: importServerUrl.trim() || undefined,
     });
     setImporting(false);
 
