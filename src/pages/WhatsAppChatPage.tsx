@@ -485,7 +485,22 @@ const WhatsAppChatPage = () => {
           filter: `workspace_id=eq.${workspaceId}`,
         },
         (payload) => {
+          const eventType = payload.eventType;
           const newMsg = payload.new as Message;
+
+          // Handle UPDATE events (status changes)
+          if (eventType === "UPDATE") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === newMsg.message_id
+                  ? { ...m, status: newMsg.status }
+                  : m
+              )
+            );
+            return;
+          }
+
+          // INSERT events below
 
           // Update chat list
           setChats((prev) => {
