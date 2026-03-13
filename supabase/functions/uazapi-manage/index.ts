@@ -377,6 +377,8 @@ Deno.serve(async (req) => {
           api_token: token,
           phone: detectedPhone,
           server_url: serverUrl,
+          profile_name: detectedProfileName,
+          profile_pic_url: detectedProfilePicUrl,
         })
         .select()
         .single();
