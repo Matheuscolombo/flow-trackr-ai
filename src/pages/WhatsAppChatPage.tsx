@@ -276,20 +276,25 @@ const WhatsAppChatPage = () => {
       console.error("[handleSend] No instance_id available");
       return;
     }
-    setMessageText("");
     setSending(true);
 
     try {
-      await postApi("whatsapp-send", accessToken, {
+      const res = await postApi("whatsapp-send", accessToken, {
         instance_id: instanceId,
         remote_jid: selectedChat.remote_jid,
         text,
       });
-      // Reload messages immediately after sending
-      await loadMessages(selectedChat.phone);
+      if (res && res.ok) {
+        setMessageText("");
+        await loadMessages(selectedChat.phone);
+      } else {
+        const detail = res?.attempts?.map((a: any) => `${a.label}: ${a.status}`).join(", ") || res?.error || "Erro desconhecido";
+        console.error("[handleSend] API error:", detail);
+        alert(`Falha ao enviar mensagem. Detalhes: ${detail}`);
+      }
     } catch (err) {
       console.error("[handleSend] send failed:", err);
-      setMessageText(text); // restore text on failure
+      alert("Erro ao enviar mensagem. Verifique sua conexão.");
     } finally {
       setSending(false);
     }

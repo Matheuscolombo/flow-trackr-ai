@@ -15,16 +15,60 @@ function normPhone(raw: string): string {
   return `+55${cleaned.slice(-11)}`;
 }
 
-/** Clean number: remove @s.whatsapp.net suffix, keep only digits */
 function cleanNumber(raw: string): string {
   return (raw || "").replace(/@.*$/, "").replace(/\D/g, "");
+}
+
+interface SendAttempt {
+  label: string;
+  url: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}
+
+function buildAttempts(baseUrl: string, token: string, number: string, text: string): SendAttempt[] {
+  return [
+    // UAZAPI v2 official: POST /send/text with token header
+    {
+      label: "v2 /send/text + token header",
+      url: `${baseUrl}/send/text`,
+      headers: { "Content-Type": "application/json", "token": token },
+      body: { number, text },
+    },
+    // v2 with apikey header variant
+    {
+      label: "v2 /send/text + apikey header",
+      url: `${baseUrl}/send/text`,
+      headers: { "Content-Type": "application/json", "apikey": token },
+      body: { number, text },
+    },
+    // v2 behind /api proxy
+    {
+      label: "v2 /api/send/text + token header",
+      url: `${baseUrl}/api/send/text`,
+      headers: { "Content-Type": "application/json", "token": token },
+      body: { number, text },
+    },
+    // Legacy fallbacks (lower priority)
+    {
+      label: "legacy /message/sendText + apikey + textMessage",
+      url: `${baseUrl}/message/sendText`,
+      headers: { "Content-Type": "application/json", "apikey": token },
+      body: { number, textMessage: { text } },
+    },
+    {
+      label: "legacy /message/sendText + apikey + text",
+      url: `${baseUrl}/message/sendText`,
+      headers: { "Content-Type": "application/json", "apikey": token },
+      body: { number, text },
+    },
+  ];
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
-
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
@@ -105,47 +149,9 @@ Deno.serve(async (req) => {
     const number = cleanNumber(remote_jid);
     console.log(`[whatsapp-send] Sending to ${number} via ${inst.instance_name} at ${baseUrl}`);
 
-    // Try multiple endpoint/payload/header combinations
-    const attempts = [
-      {
-        label: "sendText with textMessage body + apikey header",
-        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
-        headers: { "Content-Type": "application/json", "apikey": token },
-        body: { number, textMessage: { text } },
-      },
-      {
-        label: "sendText with text body + apikey header",
-        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
-        headers: { "Content-Type": "application/json", "apikey": token },
-        body: { number, text },
-      },
-      {
-        label: "sendText with token header",
-        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
-        headers: { "Content-Type": "application/json", "token": token },
-        body: { number, textMessage: { text } },
-      },
-      {
-        label: "sendText with token header + simple body",
-        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
-        headers: { "Content-Type": "application/json", "token": token },
-        body: { number, text },
-      },
-      {
-        label: "sendText no instance in path + apikey",
-        url: `${baseUrl}/message/sendText`,
-        headers: { "Content-Type": "application/json", "apikey": token },
-        body: { number, text, instanceName: inst.instance_name },
-      },
-      {
-        label: "sendMessage endpoint + apikey",
-        url: `${baseUrl}/message/sendMessage/${inst.instance_name}`,
-        headers: { "Content-Type": "application/json", "apikey": token },
-        body: { number, message: text },
-      },
-    ];
+    const attempts = buildAttempts(baseUrl, token, number, text);
+    const attemptResults: Array<{ label: string; status: number; snippet: string }> = [];
 
-    let lastErr: unknown = null;
     for (const attempt of attempts) {
       try {
         console.log(`[whatsapp-send] Trying: ${attempt.label} -> ${attempt.url}`);
@@ -154,13 +160,22 @@ Deno.serve(async (req) => {
           headers: attempt.headers,
           body: JSON.stringify(attempt.body),
         });
-        const resBody = await res.json().catch(() => ({}));
-        console.log(`[whatsapp-send] ${attempt.label}: status=${res.status} body=${JSON.stringify(resBody).slice(0, 200)}`);
 
-        if (res.ok || (res.status >= 200 && res.status < 300)) {
-          // Success! Save outbound message
+        let resBody: unknown;
+        const resText = await res.text();
+        try { resBody = JSON.parse(resText); } catch { resBody = resText; }
+
+        const snippet = typeof resBody === "string" ? resBody.slice(0, 200) : JSON.stringify(resBody).slice(0, 200);
+        console.log(`[whatsapp-send] ${attempt.label}: status=${res.status} body=${snippet}`);
+        attemptResults.push({ label: attempt.label, status: res.status, snippet });
+
+        if (res.ok) {
+          // Success — persist outbound message
           const phone = normPhone(remote_jid);
-          const messageId = `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const apiMsgId = typeof resBody === "object" && resBody !== null
+            ? (resBody as Record<string, unknown>).messageId || (resBody as Record<string, unknown>).id || null
+            : null;
+          const messageId = apiMsgId ? String(apiMsgId) : `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
           const { error: insertErr } = await serviceClient.from("whatsapp_messages").insert({
             workspace_id: inst.workspace_id,
@@ -174,7 +189,7 @@ Deno.serve(async (req) => {
             body: text,
             status: "sent",
             timestamp_msg: new Date().toISOString(),
-            payload_raw: {},
+            payload_raw: typeof resBody === "object" ? resBody : { raw: resBody },
           });
 
           if (insertErr) console.error("[whatsapp-send] DB insert error:", insertErr);
@@ -198,16 +213,18 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-
-        lastErr = resBody;
       } catch (e) {
         console.error(`[whatsapp-send] ${attempt.label} error:`, e);
-        lastErr = e;
+        attemptResults.push({ label: attempt.label, status: 0, snippet: String(e) });
       }
     }
 
     // All attempts failed
-    return new Response(JSON.stringify({ error: "All send attempts failed", detail: lastErr }), {
+    console.error("[whatsapp-send] All attempts failed:", JSON.stringify(attemptResults));
+    return new Response(JSON.stringify({
+      error: "All send attempts failed",
+      attempts: attemptResults.map(a => ({ label: a.label, status: a.status })),
+    }), {
       status: 502,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
