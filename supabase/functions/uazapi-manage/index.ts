@@ -356,6 +356,8 @@ Deno.serve(async (req) => {
         const parsed = extractConnectionState(stateResult.data);
         detectedStatus = parsed.status;
         detectedPhone = parsed.phone;
+        detectedProfileName = parsed.profileName;
+        detectedProfilePicUrl = parsed.profilePicUrl;
       } catch (e) {
         console.error("[uazapi-manage] import validation error:", e);
         return new Response(JSON.stringify({ error: "Could not reach UAZAPI to validate token" }), {
