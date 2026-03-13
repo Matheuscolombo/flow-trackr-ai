@@ -11,6 +11,7 @@ import {
   Phone,
   Copy,
   Check,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,6 +86,11 @@ const WhatsAppPage = () => {
   const [qrData, setQrData] = useState<{ instanceId: string; qrcode: string | null; loading: boolean } | null>(null);
   const [pollingId, setPollingId] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importName, setImportName] = useState("");
+  const [importDisplayName, setImportDisplayName] = useState("");
+  const [importToken, setImportToken] = useState("");
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
@@ -174,6 +180,28 @@ const WhatsAppPage = () => {
     }
   };
 
+  const handleImport = async () => {
+    if (!importName.trim() || !importToken.trim()) return;
+    setImporting(true);
+    const data = await callManage("import", {}, {
+      name: importName.trim(),
+      display_name: importDisplayName.trim() || importName.trim(),
+      token: importToken.trim(),
+    });
+    setImporting(false);
+
+    if (data.error) {
+      toast({ title: "Erro ao importar", description: data.error, variant: "destructive" });
+    } else {
+      toast({ title: "Instância importada!", description: `Status: ${data.status || "desconhecido"}` });
+      setImportOpen(false);
+      setImportName("");
+      setImportDisplayName("");
+      setImportToken("");
+      await fetchInstances();
+    }
+  };
+
   const copyToken = async (token: string, id: string) => {
     await navigator.clipboard.writeText(token);
     setCopied(id);
@@ -205,6 +233,58 @@ const WhatsAppPage = () => {
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
             Atualizar
           </Button>
+          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                Importar
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Importar Instância Existente</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nome da Instância (slug)</Label>
+                  <Input
+                    placeholder="matheus-colombo-teste"
+                    value={importName}
+                    onChange={(e) => setImportName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nome de Exibição</Label>
+                  <Input
+                    placeholder="Matheus Colombo Teste"
+                    value={importDisplayName}
+                    onChange={(e) => setImportDisplayName(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Token da Instância (UAZAPI)</Label>
+                  <Input
+                    placeholder="eec09ca7-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    value={importToken}
+                    onChange={(e) => setImportToken(e.target.value)}
+                    className="text-sm font-mono"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Token gerado pela UAZAPI ao criar a instância</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" size="sm">Cancelar</Button>
+                </DialogClose>
+                <Button size="sm" onClick={handleImport} disabled={importing || !importName.trim() || !importToken.trim()}>
+                  {importing ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
+                  Importar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm">
