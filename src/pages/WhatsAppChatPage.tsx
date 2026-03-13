@@ -9,6 +9,11 @@ import {
   Loader2,
   ChevronLeft,
   RefreshCw,
+  Paperclip,
+  Image,
+  FileText,
+  Download,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +74,25 @@ function formatDateSeparator(ts: string) {
   return format(d, "dd 'de' MMMM", { locale: ptBR });
 }
 
+function mediaTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    image: "📷 Foto",
+    audio: "🎤 Áudio",
+    video: "🎬 Vídeo",
+    document: "📄 Documento",
+    sticker: "🩷 Sticker",
+    media: "📎 Mídia",
+  };
+  return labels[type] || `[${type}]`;
+}
+
+function detectMediaType(file: File): string {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("audio/")) return "audio";
+  if (file.type.startsWith("video/")) return "video";
+  return "document";
+}
+
 async function fetchApi(path: string, token: string) {
   const res = await fetch(
     `https://${projectId}.supabase.co/functions/v1/${path}`,
@@ -107,6 +131,98 @@ async function postApi(path: string, token: string, body: unknown) {
   return res.json();
 }
 
+/** Render media content inside message bubble */
+function MediaContent({ msg }: { msg: Message }) {
+  const { message_type, media_url, media_mime_type, body, direction } = msg;
+  const isOutbound = direction === "outbound";
+
+  if (!media_url) {
+    // No URL available — show type label
+    return (
+      <p className="text-[10px] italic opacity-70">
+        {mediaTypeLabel(message_type)}
+        {body && <span className="not-italic block mt-1 text-xs">{body}</span>}
+      </p>
+    );
+  }
+
+  const captionEl = body ? (
+    <p className="text-xs whitespace-pre-wrap break-words mt-1">{body}</p>
+  ) : null;
+
+  if (message_type === "image" || message_type === "sticker") {
+    return (
+      <div>
+        <a href={media_url} target="_blank" rel="noopener noreferrer">
+          <img
+            src={media_url}
+            alt="Imagem"
+            className="rounded max-w-full max-h-60 object-contain cursor-pointer"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = "none";
+              const fallback = target.nextElementSibling as HTMLElement;
+              if (fallback) fallback.style.display = "flex";
+            }}
+          />
+          <div className="hidden items-center gap-1.5 py-2 text-[10px] opacity-70">
+            <Image className="w-3.5 h-3.5" />
+            <span>Imagem expirada</span>
+          </div>
+        </a>
+        {captionEl}
+      </div>
+    );
+  }
+
+  if (message_type === "audio") {
+    return (
+      <div>
+        <audio controls className="max-w-full h-10" preload="none">
+          <source src={media_url} type={media_mime_type || "audio/ogg"} />
+          Áudio não suportado
+        </audio>
+        {captionEl}
+      </div>
+    );
+  }
+
+  if (message_type === "video") {
+    return (
+      <div>
+        <video
+          controls
+          className="rounded max-w-full max-h-60"
+          preload="none"
+        >
+          <source src={media_url} type={media_mime_type || "video/mp4"} />
+          Vídeo não suportado
+        </video>
+        {captionEl}
+      </div>
+    );
+  }
+
+  // document / other
+  return (
+    <div>
+      <a
+        href={media_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`flex items-center gap-2 py-1.5 px-2 rounded text-xs ${
+          isOutbound ? "bg-primary-foreground/10" : "bg-foreground/5"
+        }`}
+      >
+        <FileText className="w-4 h-4 shrink-0" />
+        <span className="truncate flex-1">{body || "Documento"}</span>
+        <Download className="w-3.5 h-3.5 shrink-0 opacity-70" />
+      </a>
+      {body && captionEl}
+    </div>
+  );
+}
+
 const WhatsAppChatPage = () => {
   const { session, workspaceId } = useAuth();
   const navigate = useNavigate();
@@ -121,7 +237,9 @@ const WhatsAppChatPage = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState("");
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const accessToken = session?.access_token || "";
 
@@ -183,17 +301,21 @@ const WhatsAppChatPage = () => {
         },
         (payload) => {
           const newMsg = payload.new as Message;
-          console.log("[WhatsApp Chat] realtime msg:", newMsg.phone, newMsg.direction);
 
           // Update chat list
           setChats((prev) => {
+            const preview = newMsg.message_type === "text"
+              ? (newMsg.body || "")
+              : (newMsg.body ? `${mediaTypeLabel(newMsg.message_type)} ${newMsg.body}` : mediaTypeLabel(newMsg.message_type));
+
             const existing = prev.find((c) => c.phone === newMsg.phone);
             if (existing) {
               const updated = prev.map((c) =>
                 c.phone === newMsg.phone
                   ? {
                       ...c,
-                      last_message: newMsg.body || `[${newMsg.message_type}]`,
+                      last_message: preview,
+                      last_message_type: newMsg.message_type,
                       last_direction: newMsg.direction,
                       last_timestamp: newMsg.timestamp_msg,
                       message_count: c.message_count + 1,
@@ -206,12 +328,11 @@ const WhatsAppChatPage = () => {
                   new Date(a.last_timestamp).getTime()
               );
             } else {
-              // New conversation
               return [
                 {
                   phone: newMsg.phone,
                   remote_jid: newMsg.remote_jid,
-                  last_message: newMsg.body || `[${newMsg.message_type}]`,
+                  last_message: preview,
                   last_message_type: newMsg.message_type,
                   last_direction: newMsg.direction,
                   last_timestamp: newMsg.timestamp_msg,
@@ -225,7 +346,7 @@ const WhatsAppChatPage = () => {
             }
           });
 
-          // If this chat is selected, add message to thread
+          // If this chat is selected, add message
           setSelectedChat((current) => {
             if (current && current.phone === newMsg.phone) {
               setMessages((prev) => {
@@ -246,36 +367,27 @@ const WhatsAppChatPage = () => {
     };
   }, [workspaceId]);
 
-  // Polling fallback — reload chats + open chat messages every 10s
+  // Polling
   useEffect(() => {
     if (!accessToken) return;
-    const interval = setInterval(() => {
-      loadChats();
-    }, 10000);
+    const interval = setInterval(() => { loadChats(); }, 10000);
     return () => clearInterval(interval);
   }, [accessToken, loadChats]);
 
-  // Polling fallback for open chat messages
   useEffect(() => {
     if (!accessToken || !selectedChat) return;
-    const interval = setInterval(() => {
-      loadMessages(selectedChat.phone);
-    }, 10000);
+    const interval = setInterval(() => { loadMessages(selectedChat.phone); }, 10000);
     return () => clearInterval(interval);
   }, [accessToken, selectedChat, loadMessages]);
 
-  // Get first available instance_id for fallback
   const fallbackInstanceId = chats.find(c => c.instance_id)?.instance_id || null;
 
-  // Send message
+  // Send text message
   const handleSend = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
     const text = messageText.trim();
     const instanceId = selectedChat.instance_id || fallbackInstanceId;
-    if (!instanceId) {
-      console.error("[handleSend] No instance_id available");
-      return;
-    }
+    if (!instanceId) return;
     setSending(true);
 
     try {
@@ -289,7 +401,6 @@ const WhatsAppChatPage = () => {
         await loadMessages(selectedChat.phone);
       } else {
         const detail = res?.attempts?.map((a: any) => `${a.label}: ${a.status}`).join(", ") || res?.error || "Erro desconhecido";
-        console.error("[handleSend] API error:", detail);
         alert(`Falha ao enviar mensagem. Detalhes: ${detail}`);
       }
     } catch (err) {
@@ -297,6 +408,61 @@ const WhatsAppChatPage = () => {
       alert("Erro ao enviar mensagem. Verifique sua conexão.");
     } finally {
       setSending(false);
+    }
+  };
+
+  // Send file
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedChat || uploading) return;
+
+    const instanceId = selectedChat.instance_id || fallbackInstanceId;
+    if (!instanceId) return;
+
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    setUploading(true);
+    try {
+      // Upload to storage
+      const ext = file.name.split(".").pop() || "bin";
+      const path = `${workspaceId}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
+      
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from("whatsapp-media")
+        .upload(path, file, { contentType: file.type });
+
+      if (uploadErr) throw new Error(uploadErr.message);
+
+      // Get public URL
+      const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(path);
+      const publicUrl = urlData.publicUrl;
+
+      if (!publicUrl) throw new Error("Não foi possível gerar URL pública");
+
+      const mediaType = detectMediaType(file);
+
+      const res = await postApi("whatsapp-send", accessToken, {
+        instance_id: instanceId,
+        remote_jid: selectedChat.remote_jid,
+        mediaUrl: publicUrl,
+        mediaType,
+        caption: messageText.trim() || undefined,
+        fileName: file.name,
+      });
+
+      if (res && res.ok) {
+        setMessageText("");
+        await loadMessages(selectedChat.phone);
+      } else {
+        const detail = res?.error || "Erro ao enviar arquivo";
+        alert(`Falha ao enviar arquivo: ${detail}`);
+      }
+    } catch (err) {
+      console.error("[handleFileSelect] error:", err);
+      alert("Erro ao enviar arquivo. Verifique sua conexão.");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -311,18 +477,10 @@ const WhatsAppChatPage = () => {
   const handleSync = async () => {
     if (syncing || !accessToken) return;
     try {
-      // Always fetch instances from the manage endpoint (don't rely on chat data)
-      console.log("[sync] fetching instances...");
       const instData = await fetchApi("uazapi-manage?action=list", accessToken);
       const instances = instData.instances || [];
-      console.log("[sync] instances found:", instances.length, instances.map((i: { id: string; instance_name: string }) => i.instance_name));
-      if (instances.length === 0) {
-        console.warn("[sync] no instances found");
-        return;
-      }
-      // Use first connected instance
+      if (instances.length === 0) return;
       const connected = instances.find((i: { status: string }) => i.status === "connected") || instances[0];
-      console.log("[sync] using instance:", connected.id, connected.instance_name);
       await runSync(connected.id);
     } catch (e) {
       console.error("[sync] handleSync error:", e);
@@ -341,17 +499,13 @@ const WhatsAppChatPage = () => {
 
     while (hasMore) {
       try {
-        console.log(`[sync] processing chat cursor=${chatCursor}...`);
         const result = await postApi("uazapi-manage?action=sync_messages", accessToken, {
           instance_id: instanceId,
           chat_cursor: chatCursor,
           chat_list: chatList,
         });
 
-        console.log("[sync] result:", JSON.stringify(result));
-
         if (result.error && !result.hasMore) {
-          console.error("[sync] error:", result.error);
           setSyncProgress(`Erro: ${result.error}`);
           await new Promise(r => setTimeout(r, 2000));
           break;
@@ -363,10 +517,8 @@ const WhatsAppChatPage = () => {
         chatList = result.chat_list || chatList;
         setSyncProgress(`Sincronizando... ${chatCursor}/${result.totalChats || "?"} conversas (${totalSynced} msgs)`);
 
-        // Small delay to avoid overwhelming
         if (hasMore) await new Promise(r => setTimeout(r, 500));
       } catch (e) {
-        console.error("[sync] fetch error:", e);
         setSyncProgress("Erro de conexão");
         await new Promise(r => setTimeout(r, 2000));
         break;
@@ -375,11 +527,7 @@ const WhatsAppChatPage = () => {
 
     setSyncing(false);
     setSyncProgress(totalSynced > 0 ? `✓ ${totalSynced} mensagens sincronizadas` : "");
-    if (totalSynced > 0) {
-      // Clear progress after 3s
-      setTimeout(() => setSyncProgress(""), 3000);
-    }
-    // Reload chats
+    if (totalSynced > 0) setTimeout(() => setSyncProgress(""), 3000);
     await loadChats();
     if (selectedChat) await loadMessages(selectedChat.phone);
   };
@@ -570,15 +718,16 @@ const WhatsAppChatPage = () => {
                                 : "bg-muted text-foreground rounded-bl-sm"
                             }`}
                           >
-                            {msg.message_type !== "text" && !msg.body && (
-                              <p className="text-[10px] italic opacity-70">
-                                [{msg.message_type}]
-                              </p>
-                            )}
-                            {msg.body && (
+                            {msg.message_type !== "text" ? (
+                              <MediaContent msg={msg} />
+                            ) : msg.body ? (
                               <p className="text-xs whitespace-pre-wrap break-words">
                                 {msg.body}
                               </p>
+                            ) : null}
+                            {/* For text-only messages with no body */}
+                            {msg.message_type === "text" && !msg.body && (
+                              <p className="text-[10px] italic opacity-70">[mensagem vazia]</p>
                             )}
                             <p
                               className={`text-[9px] mt-0.5 text-right ${
@@ -601,18 +750,39 @@ const WhatsAppChatPage = () => {
 
             {/* Input bar */}
             <div className="px-4 py-3 border-t border-border flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
+                onChange={handleFileSelect}
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                className="shrink-0 h-9 w-9"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending || uploading}
+                title="Enviar arquivo"
+              >
+                {uploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Paperclip className="w-4 h-4" />
+                )}
+              </Button>
               <Input
                 placeholder="Digite uma mensagem..."
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 className="flex-1 text-xs"
-                disabled={sending}
+                disabled={sending || uploading}
               />
               <Button
                 size="icon"
                 onClick={handleSend}
-                disabled={!messageText.trim() || sending}
+                disabled={!messageText.trim() || sending || uploading}
                 className="shrink-0"
               >
                 {sending ? (
