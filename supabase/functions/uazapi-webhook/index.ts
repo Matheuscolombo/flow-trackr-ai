@@ -469,7 +469,11 @@ Deno.serve(async (req) => {
     // Download media to permanent storage if URL is from WhatsApp CDN
     let permanentMediaUrl = mediaUrl;
     if (mediaUrl && workspaceId) {
-      const stored = await downloadAndStoreMedia(serviceClient, mediaUrl, workspaceId, messageId, mediaMimeType);
+      // Also try BaseUrl from webhook payload as fallback for UAZAPI base URL
+      const baseUrlFromPayload = (body.BaseUrl as string) || null;
+      const effectiveBaseUrl = uazapiServerUrl || baseUrlFromPayload;
+      const effectiveToken = uazapiApiToken || (body.token as string) || null;
+      const stored = await downloadAndStoreMedia(serviceClient, mediaUrl, workspaceId, messageId, mediaMimeType, effectiveBaseUrl, effectiveToken);
       if (stored) {
         permanentMediaUrl = stored;
       }
