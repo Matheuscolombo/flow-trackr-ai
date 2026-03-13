@@ -1,80 +1,43 @@
 
 
-## Diagnóstico Confirmado
+## Problema: CSV com schema duplo
 
-**Causa raiz**: Os arquivos baixados do CDN do WhatsApp (`mmg.whatsapp.net`) estao **criptografados com E2E** (end-to-end encryption). O payload confirma:
-- URLs terminam em `.enc`
-- Campos `mediaKey`, `fileEncSHA256`, `fileSHA256` presentes no `content`
-- Os bytes baixados sao o blob criptografado, nao a midia real
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-Os downloads "com sucesso" (76KB, 55KB, 3KB) na verdade salvaram blobs criptografados no Storage. Por isso imagem em branco, audio sem som, PDF vazio.
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-**O endpoint `/chat/downloadMediaMessage`** deveria descriptografar, mas retorna:
-- 405 (Method Not Allowed) em `POST /chat/downloadMediaMessage`
-- 404 em `POST /api/chat/downloadMediaMessage`
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-O 405 indica que o endpoint existe mas o metodo HTTP esta errado. Provavelmente precisa ser **GET** com messageId como path/query param, ou o messageId esta no formato errado (enviamos `554891757743:3EB0...` mas o campo `messageid` no payload e so `3EB0...`).
+### Alterações em `supabase/functions/import-leads/index.ts`
 
----
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-## Plano de Correcao
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-### 1. Corrigir chamada ao UAZAPI para descriptografia
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
 
-No `uazapi-webhook/index.ts` e `backfill-media/index.ts`, expandir a matriz de tentativas do `downloadMediaMessage`:
+### Detalhes técnicos
 
-- Tentar **GET** alem de POST
-- Tentar messageId **sem prefixo** (so a parte `3EB0...`)
-- Tentar paths adicionais: `/message/downloadMedia`, `/chat/getMediaMessage`
-- Tentar enviar o `message_id` tanto no body quanto como query param
-
-```text
-Tentativas (em ordem):
-1. POST /chat/downloadMediaMessage  { messageId: "3EB0..." }     (id curto)
-2. GET  /chat/downloadMediaMessage?messageId=3EB0...              (GET)
-3. POST /chat/downloadMediaMessage  { messageId: "owner:3EB0..." } (id completo, atual)
-4. GET  /message/downloadMedia/3EB0...                            (path param)
-5. POST /api/chat/downloadMediaMessage { messageId: "3EB0..." }   (api prefix)
+No `parseCSV`, adicionar detecção de header duplicado:
+```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
 ```
 
-### 2. Corrigir mapeamento de extensao/MIME
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
 
-- Adicionar `"audio/ogg; codecs=opus": "ogg"` ao `MEDIA_EXT_MAP` (ja existe no webhook mas falta no backfill)
-- Garantir que o `contentType` no upload use o MIME correto e nao caia em `application/octet-stream`
-
-### 3. Corrigir frontend - imagem, audio e documento
-
-**Imagem:**
-- Mostrar thumbnail inline (preview)
-- Ao clicar, abrir modal fullscreen com botao de download
-- Fallback: se `onError`, mostrar icone + "Imagem indisponivel"
-
-**Audio:**
-- Player com `<audio controls preload="auto">` 
-- Corrigir `<source type>` para aceitar `audio/ogg; codecs=opus` como `audio/ogg`
-- Adicionar botoes de velocidade (1x, 1.5x, 2x)
-- Barra de progresso funcional
-
-**Documento:**
-- Mostrar nome do arquivo quando disponivel (do `content.fileName` no payload)
-- Link de download direto com icone
-- Para PDF, tentar mostrar preview inline (iframe ou link)
-
-### 4. Re-executar backfill com logica corrigida
-
-Apos deploy do webhook corrigido, rodar o backfill-media para re-baixar todos os arquivos existentes com a logica de descriptografia correta.
-
-### 5. Limpar arquivos corrompidos do Storage
-
-Deletar os blobs criptografados existentes antes de re-upload, para evitar cache de arquivos invalidos.
-
----
-
-### Arquivos alterados
-- `supabase/functions/uazapi-webhook/index.ts` - expandir tentativas de download
-- `supabase/functions/backfill-media/index.ts` - mesma logica + limpeza
-- `src/pages/WhatsAppChatPage.tsx` - modal de imagem, player de audio melhorado, preview de documento
-
-### Risco
-Se nenhuma variacao do endpoint de download funcionar na UAZAPI v2, a unica alternativa seria descriptografar localmente usando o `mediaKey` do payload (complexo mas possivel). Nesse caso, reportarei o resultado apos o primeiro deploy.
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 

@@ -9,9 +9,139 @@ const corsHeaders = {
 const MEDIA_EXT_MAP: Record<string, string> = {
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
   "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/opus": "opus",
+  "audio/ogg; codecs=opus": "ogg",
   "video/mp4": "mp4", "video/3gpp": "3gp",
   "application/pdf": "pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
 };
+
+function shortMessageId(fullId: string): string {
+  const parts = fullId.split(":");
+  return parts.length > 1 ? parts[parts.length - 1] : fullId;
+}
+
+function isValidMediaResponse(res: Response): boolean {
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+  if (ct.includes("text/html") || ct.includes("text/plain")) return false;
+  return true;
+}
+
+async function extractBlobFromResponse(
+  res: Response,
+  mimeType: string | null,
+): Promise<Blob | null> {
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+  if (ct.includes("application/json")) {
+    const json = await res.json();
+    const base64 = json.base64 || json.data || json.media;
+    if (base64 && typeof base64 === "string") {
+      const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+      const blob = new Blob([binary], { type: mimeType || "application/octet-stream" });
+      if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
+    }
+    const dlUrl = json.url || json.mediaUrl || json.fileUrl;
+    if (dlUrl && typeof dlUrl === "string") {
+      const dlRes = await fetch(dlUrl, { redirect: "follow" });
+      if (dlRes.ok && isValidMediaResponse(dlRes)) {
+        const blob = await dlRes.blob();
+        if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
+      }
+    }
+    return null;
+  }
+
+  if (ct.includes("text/html") || ct.includes("text/plain")) return null;
+
+  const blob = await res.blob();
+  if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
+  return null;
+}
+
+async function tryDownload(
+  creds: { server_url: string; api_token: string },
+  messageId: string,
+  mediaUrl: string | null,
+  mimeType: string | null,
+): Promise<{ blob: Blob; method: string } | null> {
+  const shortId = shortMessageId(messageId);
+
+  const attempts: Array<{ label: string; fn: () => Promise<Response> }> = [
+    {
+      label: "POST /chat/downloadMediaMessage (shortId)",
+      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "token": creds.api_token },
+        body: JSON.stringify({ messageId: shortId }),
+      }),
+    },
+    {
+      label: "GET /chat/downloadMediaMessage?messageId (shortId)",
+      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage?messageId=${encodeURIComponent(shortId)}`, {
+        method: "GET",
+        headers: { "token": creds.api_token },
+      }),
+    },
+    {
+      label: "POST /chat/downloadMediaMessage (fullId)",
+      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "token": creds.api_token },
+        body: JSON.stringify({ messageId }),
+      }),
+    },
+    {
+      label: "GET /chat/downloadMediaMessage/shortId",
+      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage/${encodeURIComponent(shortId)}`, {
+        method: "GET",
+        headers: { "token": creds.api_token },
+      }),
+    },
+    {
+      label: "POST /message/downloadMedia (shortId)",
+      fn: () => fetch(`${creds.server_url}/message/downloadMedia`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "token": creds.api_token },
+        body: JSON.stringify({ messageId: shortId }),
+      }),
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      console.log(`[backfill] trying: ${attempt.label}`);
+      const res = await attempt.fn();
+      console.log(`[backfill] ${attempt.label}: ${res.status} ${res.headers.get("content-type")}`);
+
+      if (res.ok) {
+        const blob = await extractBlobFromResponse(res, mimeType);
+        if (blob) {
+          return { blob, method: attempt.label };
+        }
+      }
+    } catch (e) {
+      console.log(`[backfill] ${attempt.label} error: ${e}`);
+    }
+  }
+
+  // CDN fallback
+  if (mediaUrl) {
+    try {
+      // Strip cache-buster params to get clean URL
+      const cleanUrl = mediaUrl.split("?")[0];
+      const res = await fetch(cleanUrl, { redirect: "follow" });
+      if (res.ok && isValidMediaResponse(res)) {
+        const blob = await res.blob();
+        if (blob.size > 0 && blob.size < 20 * 1024 * 1024) {
+          return { blob, method: "cdn-direct" };
+        }
+      }
+    } catch { /* continue */ }
+  }
+
+  return null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -23,7 +153,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Find all media messages - force re-download everything
+  // Find all media messages
   const { data: messages, error } = await serviceClient
     .from("whatsapp_messages")
     .select("id, message_id, media_url, media_mime_type, workspace_id, instance_id")
@@ -40,7 +170,7 @@ Deno.serve(async (req) => {
 
   const needsDownload = messages || [];
 
-  // Get unique instance IDs to fetch UAZAPI credentials
+  // Get instance credentials
   const instanceIds = [...new Set(needsDownload.map(m => m.instance_id).filter(Boolean))];
   const instanceMap: Record<string, { server_url: string; api_token: string }> = {};
   
@@ -57,78 +187,35 @@ Deno.serve(async (req) => {
 
   let success = 0;
   let failed = 0;
+  const results: Array<{ id: string; status: string; method?: string; size?: number }> = [];
 
   for (const msg of needsDownload) {
     const creds = msg.instance_id ? instanceMap[msg.instance_id] : null;
-    let blob: Blob | null = null;
-    let downloadMethod = "";
 
-    // Strategy 1: UAZAPI downloadMediaMessage
-    if (creds) {
-      const endpoints = [
-        `${creds.server_url}/chat/downloadMediaMessage`,
-        `${creds.server_url}/api/chat/downloadMediaMessage`,
-      ];
-      for (const endpoint of endpoints) {
-        try {
-          const res = await fetch(endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "token": creds.api_token },
-            body: JSON.stringify({ messageId: msg.message_id }),
-          });
-          if (res.ok) {
-            const ct = (res.headers.get("content-type") || "").toLowerCase();
-            if (ct.includes("application/json")) {
-              const json = await res.json();
-              const base64 = json.base64 || json.data || json.media;
-              if (base64 && typeof base64 === "string") {
-                const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-                blob = new Blob([binary], { type: msg.media_mime_type || "application/octet-stream" });
-                downloadMethod = "uazapi-base64";
-                break;
-              }
-              const dlUrl = json.url || json.mediaUrl || json.fileUrl;
-              if (dlUrl) {
-                const dlRes = await fetch(dlUrl, { redirect: "follow" });
-                if (dlRes.ok) {
-                  blob = await dlRes.blob();
-                  downloadMethod = "uazapi-url";
-                  break;
-                }
-              }
-            } else if (!ct.includes("text/html")) {
-              blob = await res.blob();
-              downloadMethod = "uazapi-binary";
-              break;
-            }
-          }
-        } catch { /* continue */ }
-      }
-    }
-
-    // Strategy 2: Direct CDN (unlikely to work for old messages)
-    if (!blob && msg.media_url) {
-      try {
-        const res = await fetch(msg.media_url, { redirect: "follow" });
-        if (res.ok) {
-          const ct = (res.headers.get("content-type") || "").toLowerCase();
-          if (!ct.includes("text/html") && !ct.includes("text/plain")) {
-            blob = await res.blob();
-            downloadMethod = "cdn-direct";
-          }
-        }
-      } catch { /* continue */ }
-    }
-
-    if (!blob || blob.size === 0 || blob.size > 20 * 1024 * 1024) {
-      console.log(`[backfill] failed: ${msg.message_id} (${downloadMethod || "no-method"})`);
+    if (!creds) {
+      console.log(`[backfill] skip ${msg.message_id}: no credentials`);
       failed++;
+      results.push({ id: msg.message_id, status: "no_credentials" });
       continue;
     }
 
-    const ext = (msg.media_mime_type && MEDIA_EXT_MAP[msg.media_mime_type]) || "bin";
+    // Delete existing corrupted file first
     const safeId = msg.message_id.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const ext = (msg.media_mime_type && MEDIA_EXT_MAP[msg.media_mime_type]) || "bin";
     const storagePath = `${msg.workspace_id}/${safeId}.${ext}`;
+
+    await serviceClient.storage.from("whatsapp-media").remove([storagePath]);
+
+    const result = await tryDownload(creds, msg.message_id, msg.media_url, msg.media_mime_type);
+
+    if (!result) {
+      console.log(`[backfill] FAILED: ${msg.message_id}`);
+      failed++;
+      results.push({ id: msg.message_id, status: "download_failed" });
+      continue;
+    }
+
+    const { blob, method } = result;
 
     const { error: uploadErr } = await serviceClient.storage
       .from("whatsapp-media")
@@ -140,6 +227,7 @@ Deno.serve(async (req) => {
     if (uploadErr) {
       console.log(`[backfill] upload failed: ${msg.message_id}: ${uploadErr.message}`);
       failed++;
+      results.push({ id: msg.message_id, status: "upload_failed" });
       continue;
     }
 
@@ -147,7 +235,6 @@ Deno.serve(async (req) => {
       .from("whatsapp-media")
       .getPublicUrl(storagePath);
 
-    // Add cache-buster to force CDN to serve fresh file
     const freshUrl = `${publicData.publicUrl}?v=${Date.now()}`;
 
     await serviceClient
@@ -155,12 +242,13 @@ Deno.serve(async (req) => {
       .update({ media_url: freshUrl })
       .eq("id", msg.id);
 
-    console.log(`[backfill] success: ${msg.message_id} via ${downloadMethod} (${blob.size} bytes)`);
+    console.log(`[backfill] SUCCESS: ${msg.message_id} via ${method} (${blob.size} bytes)`);
     success++;
+    results.push({ id: msg.message_id, status: "success", method, size: blob.size });
   }
 
   return new Response(
-    JSON.stringify({ ok: true, total: needsDownload.length, success, failed }),
+    JSON.stringify({ ok: true, total: needsDownload.length, success, failed, results }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );
 });
