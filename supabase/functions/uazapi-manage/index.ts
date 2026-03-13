@@ -326,6 +326,8 @@ Deno.serve(async (req) => {
       const baseUrl = (serverUrl || UAZAPI_URL).replace(/\/$/, "");
       let detectedStatus = "disconnected";
       let detectedPhone: string | null = null;
+      let detectedProfileName: string | null = null;
+      let detectedProfilePicUrl: string | null = null;
 
       try {
         const stateResult = await fetchConnectionState({
