@@ -50,6 +50,7 @@ function AppLayout() {
         <Route path="/insights" element={<InsightsPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/whatsapp" element={<WhatsAppPage />} />
+        <Route path="/whatsapp/chat" element={<WhatsAppChatPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppShell>
