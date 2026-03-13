@@ -251,6 +251,64 @@ const WhatsAppChatPage = () => {
     }
   };
 
+  // Sync historical messages
+  const handleSync = async () => {
+    if (syncing || !accessToken) return;
+    // Get first instance from chats or fetch instances
+    const firstInstanceId = chats.find(c => c.instance_id)?.instance_id;
+    if (!firstInstanceId) {
+      // Try to get instance from the manage endpoint
+      const instData = await fetchApi("uazapi-manage?action=list", accessToken);
+      const instances = instData.instances || [];
+      if (instances.length === 0) return;
+      await runSync(instances[0].id);
+    } else {
+      await runSync(firstInstanceId);
+    }
+  };
+
+  const runSync = async (instanceId: string) => {
+    setSyncing(true);
+    setSyncProgress("Buscando conversas...");
+    let totalSynced = 0;
+    let hasMore = true;
+    let chatCursor = 0;
+    let chatList: unknown[] = [];
+
+    while (hasMore) {
+      try {
+        const result = await postApi("uazapi-manage?action=sync_messages", accessToken, {
+          instance_id: instanceId,
+          chat_cursor: chatCursor,
+          chat_list: chatList,
+        });
+
+        if (result.error && !result.hasMore) {
+          console.error("[sync] error:", result.error);
+          break;
+        }
+
+        totalSynced += result.synced || 0;
+        hasMore = result.hasMore === true;
+        chatCursor = result.chatCursor || chatCursor + 1;
+        chatList = result.chat_list || chatList;
+        setSyncProgress(`Sincronizando... ${chatCursor}/${result.totalChats || "?"} conversas (${totalSynced} msgs)`);
+
+        // Small delay to avoid overwhelming
+        if (hasMore) await new Promise(r => setTimeout(r, 300));
+      } catch (e) {
+        console.error("[sync] fetch error:", e);
+        break;
+      }
+    }
+
+    setSyncing(false);
+    setSyncProgress("");
+    // Reload chats
+    await loadChats();
+    if (selectedChat) await loadMessages(selectedChat.phone);
+  };
+
   const filteredChats = searchQuery
     ? chats.filter(
         (c) =>
