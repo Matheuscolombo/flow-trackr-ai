@@ -228,6 +228,15 @@ const WhatsAppChatPage = () => {
     };
   }, [workspaceId]);
 
+  // Polling fallback — reload chats every 10s as safety net
+  useEffect(() => {
+    if (!accessToken) return;
+    const interval = setInterval(() => {
+      loadChats();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [accessToken, loadChats]);
+
   // Send message
   const handleSend = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
