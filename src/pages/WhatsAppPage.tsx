@@ -91,6 +91,7 @@ const WhatsAppPage = () => {
   const [importName, setImportName] = useState("");
   const [importDisplayName, setImportDisplayName] = useState("");
   const [importToken, setImportToken] = useState("");
+  const [importServerUrl, setImportServerUrl] = useState("https://tracker1.uazapi.com");
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
@@ -187,6 +188,7 @@ const WhatsAppPage = () => {
       name: importName.trim(),
       display_name: importDisplayName.trim() || importName.trim(),
       token: importToken.trim(),
+      server_url: importServerUrl.trim() || undefined,
     });
     setImporting(false);
 
@@ -198,6 +200,7 @@ const WhatsAppPage = () => {
       setImportName("");
       setImportDisplayName("");
       setImportToken("");
+      setImportServerUrl("https://tracker1.uazapi.com");
       await fetchInstances();
     }
   };
@@ -272,6 +275,16 @@ const WhatsAppPage = () => {
                     className="text-sm font-mono"
                   />
                   <p className="text-[10px] text-muted-foreground">Token gerado pela UAZAPI ao criar a instância</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Server URL</Label>
+                  <Input
+                    placeholder="https://tracker1.uazapi.com"
+                    value={importServerUrl}
+                    onChange={(e) => setImportServerUrl(e.target.value)}
+                    className="text-sm font-mono"
+                  />
+                  <p className="text-[10px] text-muted-foreground">URL do servidor UAZAPI onde a instância está hospedada</p>
                 </div>
               </div>
               <DialogFooter>

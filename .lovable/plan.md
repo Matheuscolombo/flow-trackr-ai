@@ -1,28 +1,43 @@
 
 
-## Plan: Add Server URL field to Import dialog
+## Problema: CSV com schema duplo
 
-The import failed with 404 because the instance lives on `https://tracker1.uazapi.com` but the edge function uses the global `UAZAPI_URL` secret, which may point to a different server.
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-### Changes
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-**1. Frontend (`WhatsAppPage.tsx`)**
-- Add a "Server URL" field to the Import dialog (pre-filled with default `https://tracker1.uazapi.com`)
-- Pass `server_url` in the import request body
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-**2. Edge Function (`uazapi-manage/index.ts`)**
-- In the `import` action, use `body.server_url` (if provided) instead of the global `UAZAPI_URL` for the validation call
-- Store the server URL in the DB so future status/connect calls use the correct server per instance
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-**3. Database migration**
-- Add `server_url` column (nullable text) to `whatsapp_instances`
-- Update the `status` and `connect` actions to use `inst.server_url || UAZAPI_URL` as the base URL, so imported instances with a custom server work correctly
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-### Flow
-```text
-Import dialog: Name + Display Name + Token + Server URL
-  → Edge function validates against that specific server
-  → Saves server_url to DB
-  → Future status/connect calls use per-instance server_url
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
+
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
+
+### Detalhes técnicos
+
+No `parseCSV`, adicionar detecção de header duplicado:
 ```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
+```
+
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
+
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 
