@@ -359,14 +359,6 @@ const WhatsAppChatPage = () => {
       >
         {/* Header */}
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0"
-            onClick={() => navigate("/whatsapp")}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
           <h2 className="text-sm font-semibold text-foreground flex-1">Conversas</h2>
           <Button
             size="icon"
