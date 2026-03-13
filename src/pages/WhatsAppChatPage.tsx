@@ -146,14 +146,19 @@ const WhatsAppChatPage = () => {
   // Load messages for selected chat
   const loadMessages = useCallback(async (phone: string) => {
     if (!accessToken) return;
-    setLoadingMessages(true);
-    const data = await fetchApi(
-      `whatsapp-chats?action=messages&phone=${encodeURIComponent(phone)}`,
-      accessToken
-    );
-    setMessages(data.messages || []);
-    setLoadingMessages(false);
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    try {
+      setLoadingMessages(true);
+      const data = await fetchApi(
+        `whatsapp-chats?action=messages&phone=${encodeURIComponent(phone)}`,
+        accessToken
+      );
+      setMessages(data.messages || []);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    } catch (e) {
+      console.error("[loadMessages] error:", e);
+    } finally {
+      setLoadingMessages(false);
+    }
   }, [accessToken]);
 
   useEffect(() => {
