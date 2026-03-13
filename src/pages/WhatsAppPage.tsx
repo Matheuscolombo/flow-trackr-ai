@@ -100,6 +100,13 @@ const WhatsAppPage = () => {
   const [importDisplayName, setImportDisplayName] = useState("");
   const [importToken, setImportToken] = useState("");
   const [importServerUrl, setImportServerUrl] = useState("https://tracker1.uazapi.com");
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState("");
+  const [editingStatus, setEditingStatus] = useState<string | null>(null);
+  const [editingStatusValue, setEditingStatusValue] = useState("");
+  const [updatingProfile, setUpdatingProfile] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingPicFor, setUploadingPicFor] = useState<string | null>(null);
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
