@@ -58,9 +58,50 @@ async function uploadToStorage(
   return publicData.publicUrl;
 }
 
+/** Extract short messageId (without owner prefix) */
+function shortMessageId(fullId: string): string {
+  const parts = fullId.split(":");
+  return parts.length > 1 ? parts[parts.length - 1] : fullId;
+}
+
+/**
+ * Try to extract valid media blob from a UAZAPI response.
+ */
+async function extractBlobFromResponse(
+  res: Response,
+  mimeType: string | null,
+): Promise<Blob | null> {
+  const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+  if (ct.includes("application/json")) {
+    const json = await res.json();
+    const base64 = json.base64 || json.data || json.media;
+    if (base64 && typeof base64 === "string") {
+      const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+      const blob = new Blob([binary], { type: mimeType || "application/octet-stream" });
+      if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
+    }
+    const dlUrl = json.url || json.mediaUrl || json.fileUrl;
+    if (dlUrl && typeof dlUrl === "string") {
+      const dlRes = await fetch(dlUrl, { redirect: "follow" });
+      if (dlRes.ok && isValidMediaResponse(dlRes)) {
+        const blob = await dlRes.blob();
+        if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
+      }
+    }
+    return null;
+  }
+
+  if (ct.includes("text/html") || ct.includes("text/plain")) return null;
+
+  const blob = await res.blob();
+  if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
+  return null;
+}
+
 /**
  * Download media using UAZAPI downloadMediaMessage endpoint, then upload to Storage.
- * Falls back to direct CDN fetch if UAZAPI endpoint fails.
+ * Tries multiple endpoint variations, HTTP methods, and messageId formats.
  */
 async function downloadAndStoreMedia(
   serviceClient: ReturnType<typeof createClient>,
@@ -72,66 +113,79 @@ async function downloadAndStoreMedia(
   uazapiToken?: string | null,
 ): Promise<string | null> {
   try {
-    // Strategy 1: Use UAZAPI /chat/downloadMediaMessage endpoint
-    if (uazapiBaseUrl && uazapiToken && messageId) {
-      const endpoints = [
-        `${uazapiBaseUrl}/chat/downloadMediaMessage`,
-        `${uazapiBaseUrl}/api/chat/downloadMediaMessage`,
-      ];
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`[media-download] trying UAZAPI: ${endpoint}`);
-          const res = await fetch(endpoint, {
+    const shortId = shortMessageId(messageId);
+
+    // Strategy 1: UAZAPI endpoints with multiple variations
+    if (uazapiBaseUrl && uazapiToken) {
+      const attempts: Array<{ label: string; fn: () => Promise<Response> }> = [
+        {
+          label: "POST /chat/downloadMediaMessage (shortId)",
+          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "token": uazapiToken,
-            },
+            headers: { "Content-Type": "application/json", "token": uazapiToken },
+            body: JSON.stringify({ messageId: shortId }),
+          }),
+        },
+        {
+          label: "GET /chat/downloadMediaMessage?messageId (shortId)",
+          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage?messageId=${encodeURIComponent(shortId)}`, {
+            method: "GET",
+            headers: { "token": uazapiToken },
+          }),
+        },
+        {
+          label: "POST /chat/downloadMediaMessage (fullId)",
+          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "token": uazapiToken },
             body: JSON.stringify({ messageId }),
-          });
+          }),
+        },
+        {
+          label: "GET /chat/downloadMediaMessage/shortId",
+          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage/${encodeURIComponent(shortId)}`, {
+            method: "GET",
+            headers: { "token": uazapiToken },
+          }),
+        },
+        {
+          label: "POST /message/downloadMedia (shortId)",
+          fn: () => fetch(`${uazapiBaseUrl}/message/downloadMedia`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "token": uazapiToken },
+            body: JSON.stringify({ messageId: shortId }),
+          }),
+        },
+        {
+          label: "POST /api/chat/downloadMediaMessage (shortId)",
+          fn: () => fetch(`${uazapiBaseUrl}/api/chat/downloadMediaMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "token": uazapiToken },
+            body: JSON.stringify({ messageId: shortId }),
+          }),
+        },
+      ];
+
+      for (const attempt of attempts) {
+        try {
+          console.log(`[media-download] trying: ${attempt.label}`);
+          const res = await attempt.fn();
+          console.log(`[media-download] ${attempt.label}: ${res.status} ${res.headers.get("content-type")}`);
+
           if (res.ok) {
-            const contentType = (res.headers.get("content-type") || "").toLowerCase();
-            // If response is JSON, it might contain base64 data
-            if (contentType.includes("application/json")) {
-              const json = await res.json();
-              const base64 = json.base64 || json.data || json.media;
-              if (base64 && typeof base64 === "string") {
-                const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-                const blob = new Blob([binary], { type: mimeType || "application/octet-stream" });
-                if (blob.size > 0 && blob.size < 20 * 1024 * 1024) {
-                  console.log(`[media-download] UAZAPI base64 success: ${blob.size} bytes`);
-                  return await uploadToStorage(serviceClient, blob, workspaceId, messageId, mimeType);
-                }
-              }
-              // Maybe json has a URL field
-              const dlUrl = json.url || json.mediaUrl || json.fileUrl;
-              if (dlUrl && typeof dlUrl === "string") {
-                const dlRes = await fetch(dlUrl, { redirect: "follow" });
-                if (dlRes.ok && isValidMediaResponse(dlRes)) {
-                  const blob = await dlRes.blob();
-                  if (blob.size > 0 && blob.size < 20 * 1024 * 1024) {
-                    console.log(`[media-download] UAZAPI url success: ${blob.size} bytes`);
-                    return await uploadToStorage(serviceClient, blob, workspaceId, messageId, mimeType);
-                  }
-                }
-              }
-            } else if (!contentType.includes("text/html")) {
-              // Direct binary response
-              const blob = await res.blob();
-              if (blob.size > 0 && blob.size < 20 * 1024 * 1024) {
-                console.log(`[media-download] UAZAPI binary success: ${blob.size} bytes`);
-                return await uploadToStorage(serviceClient, blob, workspaceId, messageId, mimeType || contentType);
-              }
+            const blob = await extractBlobFromResponse(res, mimeType);
+            if (blob) {
+              console.log(`[media-download] SUCCESS via ${attempt.label}: ${blob.size} bytes`);
+              return await uploadToStorage(serviceClient, blob, workspaceId, messageId, mimeType);
             }
           }
-          console.log(`[media-download] UAZAPI ${endpoint}: ${res.status}`);
         } catch (e) {
-          console.log(`[media-download] UAZAPI endpoint error: ${e}`);
+          console.log(`[media-download] ${attempt.label} error: ${e}`);
         }
       }
     }
 
-    // Strategy 2: Direct CDN fetch (fallback)
+    // Strategy 2: Direct CDN fetch (fallback - usually encrypted)
     console.log(`[media-download] trying direct CDN: ${mediaUrl.slice(0, 80)}...`);
     const response = await fetch(mediaUrl, { redirect: "follow" });
     if (!response.ok) {
@@ -139,7 +193,7 @@ async function downloadAndStoreMedia(
       return null;
     }
     if (!isValidMediaResponse(response)) {
-      console.log(`[media-download] CDN returned non-media content-type: ${response.headers.get("content-type")}`);
+      console.log(`[media-download] CDN returned non-media: ${response.headers.get("content-type")}`);
       return null;
     }
     const blob = await response.blob();
