@@ -893,6 +893,7 @@ export type Database = {
           profile_pic_url: string | null
           server_url: string | null
           status: string
+          status_text: string | null
           updated_at: string
           workspace_id: string
         }
@@ -907,6 +908,7 @@ export type Database = {
           profile_pic_url?: string | null
           server_url?: string | null
           status?: string
+          status_text?: string | null
           updated_at?: string
           workspace_id: string
         }
@@ -921,6 +923,7 @@ export type Database = {
           profile_pic_url?: string | null
           server_url?: string | null
           status?: string
+          status_text?: string | null
           updated_at?: string
           workspace_id?: string
         }

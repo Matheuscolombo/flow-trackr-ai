@@ -560,6 +560,122 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── UPDATE PROFILE (name, status, picture) ──
+    if (req.method === "POST" && action === "update_profile") {
+      const body = await req.json();
+      const instanceId = body.instance_id;
+      if (!instanceId) {
+        return new Response(JSON.stringify({ error: "instance_id required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: inst } = await supabase
+        .from("whatsapp_instances")
+        .select("*")
+        .eq("id", instanceId)
+        .eq("workspace_id", workspace.id)
+        .single();
+
+      if (!inst || !inst.api_token) {
+        return new Response(JSON.stringify({ error: "Instance not found or no token" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const baseUrl = (inst.server_url || UAZAPI_URL).replace(/\/$/, "");
+      const token = inst.api_token;
+      const results: Record<string, unknown> = {};
+
+      // Update profile name
+      if (body.profile_name !== undefined) {
+        const nameEndpoints = [
+          { url: `${baseUrl}/profile/setProfileName`, method: "PUT" },
+          { url: `${baseUrl}/profile/name`, method: "PUT" },
+          { url: `${baseUrl}/instance/setProfileName`, method: "PUT" },
+        ];
+        for (const ep of nameEndpoints) {
+          try {
+            const res = await fetch(ep.url, {
+              method: ep.method,
+              headers: { "Content-Type": "application/json", token },
+              body: JSON.stringify({ name: body.profile_name }),
+            });
+            const data = await parseJsonResponse(res);
+            console.log(`[update_profile] name ${ep.url} → ${res.status}`, JSON.stringify(data));
+            if (res.ok) { results.name = { ok: true, data }; break; }
+          } catch (e) { console.error(`[update_profile] name error:`, e); }
+        }
+      }
+
+      // Update status text (about/bio)
+      if (body.status_text !== undefined) {
+        const statusEndpoints = [
+          { url: `${baseUrl}/profile/setStatus`, method: "PUT" },
+          { url: `${baseUrl}/profile/status`, method: "PUT" },
+          { url: `${baseUrl}/instance/setStatus`, method: "PUT" },
+        ];
+        for (const ep of statusEndpoints) {
+          try {
+            const res = await fetch(ep.url, {
+              method: ep.method,
+              headers: { "Content-Type": "application/json", token },
+              body: JSON.stringify({ status: body.status_text }),
+            });
+            const data = await parseJsonResponse(res);
+            console.log(`[update_profile] status ${ep.url} → ${res.status}`, JSON.stringify(data));
+            if (res.ok) { results.status_text = { ok: true, data }; break; }
+          } catch (e) { console.error(`[update_profile] status error:`, e); }
+        }
+      }
+
+      // Update profile picture
+      if (body.profile_pic_base64) {
+        const picEndpoints = [
+          { url: `${baseUrl}/profile/setProfilePicture`, method: "POST" },
+          { url: `${baseUrl}/profile/picture`, method: "POST" },
+          { url: `${baseUrl}/instance/setProfilePicture`, method: "POST" },
+        ];
+        for (const ep of picEndpoints) {
+          try {
+            const res = await fetch(ep.url, {
+              method: ep.method,
+              headers: { "Content-Type": "application/json", token },
+              body: JSON.stringify({ image: body.profile_pic_base64 }),
+            });
+            const data = await parseJsonResponse(res);
+            console.log(`[update_profile] pic ${ep.url} → ${res.status}`, JSON.stringify(data));
+            if (res.ok) { results.picture = { ok: true, data }; break; }
+          } catch (e) { console.error(`[update_profile] pic error:`, e); }
+        }
+      }
+
+      // Update local DB
+      const dbUpdate: Record<string, unknown> = {};
+      if (body.profile_name !== undefined) dbUpdate.profile_name = body.profile_name;
+      if (body.status_text !== undefined) dbUpdate.status_text = body.status_text;
+      // For picture, re-fetch status to get new URL
+      if (body.profile_pic_base64 && results.picture) {
+        try {
+          const stateResult = await fetchConnectionState({ baseUrl, instanceName: inst.instance_name, token, apiKey: UAZAPI_API_KEY });
+          if (stateResult.ok) {
+            const parsed = extractConnectionState(stateResult.data);
+            if (parsed.profilePicUrl) dbUpdate.profile_pic_url = parsed.profilePicUrl;
+          }
+        } catch (e) { console.error("[update_profile] refetch pic url error:", e); }
+      }
+
+      if (Object.keys(dbUpdate).length > 0) {
+        await serviceClient.from("whatsapp_instances").update(dbUpdate).eq("id", instanceId);
+      }
+
+      return new Response(JSON.stringify({ ok: true, results, updated: dbUpdate }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Unknown action" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
