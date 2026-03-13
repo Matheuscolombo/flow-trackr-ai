@@ -615,7 +615,7 @@ const WhatsAppChatPage = () => {
     }
   };
 
-  // Send file
+  // Send file (optimistic)
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedChat || uploading) return;
@@ -626,44 +626,78 @@ const WhatsAppChatPage = () => {
     // Reset input
     if (fileInputRef.current) fileInputRef.current.value = "";
 
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const mediaType = detectMediaType(file);
+    const localPreviewUrl = URL.createObjectURL(file);
+
+    const optimisticMsg: Message = {
+      id: tempId,
+      phone: selectedChat.phone,
+      remote_jid: selectedChat.remote_jid,
+      body: messageText.trim() || file.name,
+      direction: "outbound",
+      message_type: mediaType,
+      timestamp_msg: new Date().toISOString(),
+      status: "pending",
+      media_url: mediaType === "image" ? localPreviewUrl : null,
+      media_mime_type: file.type || null,
+      lead_id: selectedChat.lead_id || null,
+      instance_id: instanceId,
+      message_id: tempId,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    const captionText = messageText.trim();
+    setMessageText("");
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
     setUploading(true);
     try {
-      // Upload to storage
       const ext = file.name.split(".").pop() || "bin";
       const path = `${workspaceId}/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
       
-      const { data: uploadData, error: uploadErr } = await supabase.storage
+      const { error: uploadErr } = await supabase.storage
         .from("whatsapp-media")
         .upload(path, file, { contentType: file.type });
 
       if (uploadErr) throw new Error(uploadErr.message);
 
-      // Get public URL
       const { data: urlData } = supabase.storage.from("whatsapp-media").getPublicUrl(path);
       const publicUrl = urlData.publicUrl;
-
       if (!publicUrl) throw new Error("Não foi possível gerar URL pública");
-
-      const mediaType = detectMediaType(file);
 
       const res = await postApi("whatsapp-send", accessToken, {
         instance_id: instanceId,
         remote_jid: selectedChat.remote_jid,
         mediaUrl: publicUrl,
         mediaType,
-        caption: messageText.trim() || undefined,
+        caption: captionText || undefined,
         fileName: file.name,
       });
 
       if (res && res.ok) {
-        setMessageText("");
-        await loadMessages(selectedChat.phone);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? { ...m, message_id: res.message_id || tempId, status: "sent", media_url: publicUrl }
+              : m
+          )
+        );
       } else {
-        const detail = res?.error || "Erro ao enviar arquivo";
-        alert(`Falha ao enviar arquivo: ${detail}`);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId ? { ...m, status: "failed" } : m
+          )
+        );
+        alert(`Falha ao enviar arquivo: ${res?.error || "Erro"}`);
       }
     } catch (err) {
       console.error("[handleFileSelect] error:", err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, status: "failed" } : m
+        )
+      );
       alert("Erro ao enviar arquivo. Verifique sua conexão.");
     } finally {
       setUploading(false);
