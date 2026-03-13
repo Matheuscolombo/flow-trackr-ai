@@ -68,43 +68,22 @@ async function tryDownload(
 ): Promise<{ blob: Blob; method: string } | null> {
   const shortId = shortMessageId(messageId);
 
+  // UAZAPI v2: POST /message/download { "id": "shortMessageId" }
   const attempts: Array<{ label: string; fn: () => Promise<Response> }> = [
     {
-      label: "POST /chat/downloadMediaMessage (shortId)",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage`, {
+      label: "POST /message/download (shortId)",
+      fn: () => fetch(`${creds.server_url}/message/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": creds.api_token },
-        body: JSON.stringify({ messageId: shortId }),
+        body: JSON.stringify({ id: shortId }),
       }),
     },
     {
-      label: "GET /chat/downloadMediaMessage?messageId (shortId)",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage?messageId=${encodeURIComponent(shortId)}`, {
-        method: "GET",
-        headers: { "token": creds.api_token },
-      }),
-    },
-    {
-      label: "POST /chat/downloadMediaMessage (fullId)",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage`, {
+      label: "POST /message/download (fullId)",
+      fn: () => fetch(`${creds.server_url}/message/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": creds.api_token },
-        body: JSON.stringify({ messageId }),
-      }),
-    },
-    {
-      label: "GET /chat/downloadMediaMessage/shortId",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage/${encodeURIComponent(shortId)}`, {
-        method: "GET",
-        headers: { "token": creds.api_token },
-      }),
-    },
-    {
-      label: "POST /message/downloadMedia (shortId)",
-      fn: () => fetch(`${creds.server_url}/message/downloadMedia`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "token": creds.api_token },
-        body: JSON.stringify({ messageId: shortId }),
+        body: JSON.stringify({ id: messageId }),
       }),
     },
   ];

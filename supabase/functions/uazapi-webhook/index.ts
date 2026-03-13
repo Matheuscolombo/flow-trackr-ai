@@ -118,51 +118,22 @@ async function downloadAndStoreMedia(
 
     // Strategy 1: UAZAPI endpoints with multiple variations
     if (uazapiBaseUrl && uazapiToken) {
+      // UAZAPI v2: POST /message/download { "id": "shortMessageId" }
       const attempts: Array<{ label: string; fn: () => Promise<Response> }> = [
         {
-          label: "POST /chat/downloadMediaMessage (shortId)",
-          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage`, {
+          label: "POST /message/download (shortId)",
+          fn: () => fetch(`${uazapiBaseUrl}/message/download`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "token": uazapiToken },
-            body: JSON.stringify({ messageId: shortId }),
+            body: JSON.stringify({ id: shortId }),
           }),
         },
         {
-          label: "GET /chat/downloadMediaMessage?messageId (shortId)",
-          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage?messageId=${encodeURIComponent(shortId)}`, {
-            method: "GET",
-            headers: { "token": uazapiToken },
-          }),
-        },
-        {
-          label: "POST /chat/downloadMediaMessage (fullId)",
-          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage`, {
+          label: "POST /message/download (fullId)",
+          fn: () => fetch(`${uazapiBaseUrl}/message/download`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "token": uazapiToken },
-            body: JSON.stringify({ messageId }),
-          }),
-        },
-        {
-          label: "GET /chat/downloadMediaMessage/shortId",
-          fn: () => fetch(`${uazapiBaseUrl}/chat/downloadMediaMessage/${encodeURIComponent(shortId)}`, {
-            method: "GET",
-            headers: { "token": uazapiToken },
-          }),
-        },
-        {
-          label: "POST /message/downloadMedia (shortId)",
-          fn: () => fetch(`${uazapiBaseUrl}/message/downloadMedia`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "token": uazapiToken },
-            body: JSON.stringify({ messageId: shortId }),
-          }),
-        },
-        {
-          label: "POST /api/chat/downloadMediaMessage (shortId)",
-          fn: () => fetch(`${uazapiBaseUrl}/api/chat/downloadMediaMessage`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "token": uazapiToken },
-            body: JSON.stringify({ messageId: shortId }),
+            body: JSON.stringify({ id: messageId }),
           }),
         },
       ];
