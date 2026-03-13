@@ -254,16 +254,24 @@ const WhatsAppChatPage = () => {
   // Sync historical messages
   const handleSync = async () => {
     if (syncing || !accessToken) return;
-    // Get first instance from chats or fetch instances
-    const firstInstanceId = chats.find(c => c.instance_id)?.instance_id;
-    if (!firstInstanceId) {
-      // Try to get instance from the manage endpoint
+    try {
+      // Always fetch instances from the manage endpoint (don't rely on chat data)
+      console.log("[sync] fetching instances...");
       const instData = await fetchApi("uazapi-manage?action=list", accessToken);
       const instances = instData.instances || [];
-      if (instances.length === 0) return;
-      await runSync(instances[0].id);
-    } else {
-      await runSync(firstInstanceId);
+      console.log("[sync] instances found:", instances.length, instances.map((i: { id: string; instance_name: string }) => i.instance_name));
+      if (instances.length === 0) {
+        console.warn("[sync] no instances found");
+        return;
+      }
+      // Use first connected instance
+      const connected = instances.find((i: { status: string }) => i.status === "connected") || instances[0];
+      console.log("[sync] using instance:", connected.id, connected.instance_name);
+      await runSync(connected.id);
+    } catch (e) {
+      console.error("[sync] handleSync error:", e);
+      setSyncing(false);
+      setSyncProgress("");
     }
   };
 
