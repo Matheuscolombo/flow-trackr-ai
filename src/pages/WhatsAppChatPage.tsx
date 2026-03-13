@@ -550,13 +550,34 @@ const WhatsAppChatPage = () => {
 
   const fallbackInstanceId = chats.find(c => c.instance_id)?.instance_id || null;
 
-  // Send text message
+  // Send text message (optimistic)
   const handleSend = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
     const text = messageText.trim();
     const instanceId = selectedChat.instance_id || fallbackInstanceId;
     if (!instanceId) return;
-    setSending(true);
+
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      phone: selectedChat.phone,
+      remote_jid: selectedChat.remote_jid,
+      body: text,
+      direction: "outbound",
+      message_type: "text",
+      timestamp_msg: new Date().toISOString(),
+      status: "pending",
+      media_url: null,
+      media_mime_type: null,
+      lead_id: selectedChat.lead_id || null,
+      instance_id: instanceId,
+      message_id: tempId,
+    };
+
+    // Add optimistic message and clear input immediately
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setMessageText("");
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     try {
       const res = await postApi("whatsapp-send", accessToken, {
@@ -565,17 +586,32 @@ const WhatsAppChatPage = () => {
         text,
       });
       if (res && res.ok) {
-        setMessageText("");
-        await loadMessages(selectedChat.phone);
+        // Update optimistic message with real message_id and status
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId
+              ? { ...m, message_id: res.message_id || tempId, status: "sent" }
+              : m
+          )
+        );
       } else {
+        // Mark as failed
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === tempId ? { ...m, status: "failed" } : m
+          )
+        );
         const detail = res?.attempts?.map((a: any) => `${a.label}: ${a.status}`).join(", ") || res?.error || "Erro desconhecido";
         alert(`Falha ao enviar mensagem. Detalhes: ${detail}`);
       }
     } catch (err) {
       console.error("[handleSend] send failed:", err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, status: "failed" } : m
+        )
+      );
       alert("Erro ao enviar mensagem. Verifique sua conexão.");
-    } finally {
-      setSending(false);
     }
   };
 
