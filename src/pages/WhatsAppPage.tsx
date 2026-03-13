@@ -53,6 +53,8 @@ interface WhatsAppInstance {
   api_token: string | null;
   created_at: string;
   updated_at: string;
+  profile_name: string | null;
+  profile_pic_url: string | null;
 }
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -165,7 +167,13 @@ const WhatsAppPage = () => {
 
     if (data.status) {
       setInstances((prev) =>
-        prev.map((i) => (i.id === instanceId ? { ...i, status: data.status, phone: data.detail?.phoneNumber || i.phone } : i))
+        prev.map((i) => (i.id === instanceId ? {
+          ...i,
+          status: data.status,
+          phone: data.detail?.instance?.owner || data.detail?.phoneNumber || i.phone,
+          profile_name: data.detail?.instance?.profileName || i.profile_name,
+          profile_pic_url: data.detail?.instance?.profilePicUrl || i.profile_pic_url,
+        } : i))
       );
       if (data.status === "connected") {
         toast({ title: "Conectado!", description: "Instância WhatsApp conectada com sucesso." });
@@ -376,24 +384,36 @@ const WhatsAppPage = () => {
               <Card key={inst.id} className="border-border">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
-                    <div className="min-w-0">
-                      <CardTitle className="text-sm font-semibold truncate">
-                        {inst.instance_display_name}
-                      </CardTitle>
-                      <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                        {inst.instance_name}
-                      </p>
+                    <div className="flex items-center gap-3 min-w-0">
+                      {inst.profile_pic_url ? (
+                        <img
+                          src={inst.profile_pic_url}
+                          alt={inst.profile_name || inst.instance_display_name}
+                          className="w-10 h-10 rounded-full object-cover shrink-0 border border-border"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                          <Phone className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <CardTitle className="text-sm font-semibold truncate">
+                          {inst.profile_name || inst.instance_display_name}
+                        </CardTitle>
+                        <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                          {inst.instance_name}
+                        </p>
+                        {inst.phone && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            +{inst.phone}
+                          </p>
+                        )}
+                      </div>
                     </div>
                     {statusBadge(inst.status)}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {inst.phone && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Phone className="w-3 h-3" />
-                      <span>{inst.phone}</span>
-                    </div>
-                  )}
 
                   {inst.api_token && (
                     <div className="flex items-center gap-1.5">
