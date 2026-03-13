@@ -55,10 +55,10 @@ function extractMessageData(body: Record<string, unknown>) {
     : topMessage.conversation !== undefined ? topMessage 
     : legacyMessage) as Record<string, unknown>;
 
-  // remoteJid: try key.remoteJid, chat.remoteJid, chat.id, etc.
+  // remoteJid: try key.remoteJid, chat.wa_chatid (UAZAPI v2), chat.remoteJid, etc.
   const remoteJid = (key.remoteJid as string) || 
+    (chat.wa_chatid as string) ||
     (chat.remoteJid as string) || 
-    (chat.id as string) ||
     (topMessage.remoteJid as string) ||
     (data.remoteJid as string) || "";
   const messageId = (key.id as string) || (msgKey.id as string) || (topMessage.id as string) || (data.messageId as string) || (data.id as string) || "";
