@@ -15,12 +15,18 @@ function normPhone(raw: string): string {
   return `+55${cleaned.slice(-11)}`;
 }
 
+/** Detect specific media type from MIME type string */
+function mimeToType(mime: string): string {
+  if (!mime) return "media";
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("application/") || mime.startsWith("text/")) return "document";
+  return "media";
+}
+
 /**
  * Extract message data from UAZAPI v2 payload.
- * 
- * UAZAPI v2 top-level: { BaseUrl, EventType, chat, chatSource, instanceName, message, owner, token }
- * message object has: { key: { remoteJid, fromMe, id }, message: { conversation, ... }, messageTimestamp, ... }
- * OR flat v2: { content, text, fromMe, type, ... } directly on message
  */
 function extractMessageData(body: Record<string, unknown>) {
   const eventType = (body.EventType as string) || (body.event as string) || "";
@@ -43,7 +49,7 @@ function extractMessageData(body: Record<string, unknown>) {
   const messageId = (key.id as string) || (msgKey.id as string) ||
     (topMessage.id as string) || (data.messageId as string) || (data.id as string) || "";
 
-  // --- Extract fromMe (v2 flat: message.fromMe; legacy: key.fromMe) ---
+  // --- Extract fromMe ---
   const fromMe = topMessage.fromMe === true || topMessage.fromMe === "true" ||
     key.fromMe === true || msgKey.fromMe === true;
 
@@ -51,37 +57,46 @@ function extractMessageData(body: Record<string, unknown>) {
   const messageTimestamp = topMessage.messageTimestamp || data.messageTimestamp;
 
   // --- Extract message content ---
-  // Priority 1: UAZAPI v2 flat fields on message object
-  // message.text (string), message.content (string or {text}), message.type
-  // Priority 2: Legacy nested message.message.conversation / extendedTextMessage etc.
-
   let textBody = "";
   let messageType = "text";
   let mediaUrl: string | null = null;
   let mediaMimeType: string | null = null;
 
-  // Try v2 flat format first
-  const v2Text = topMessage.text as string | undefined;
+  // ====== UAZAPI v2: message.content is an object with URL, mimetype, caption ======
   const v2Content = topMessage.content;
+  const v2Text = topMessage.text as string | undefined;
   const v2Type = (topMessage.type as string) || (topMessage.messageType as string) || (topMessage.mediaType as string) || "";
 
   let extractedFromV2 = false;
 
-  if (typeof v2Text === "string" && v2Text) {
-    textBody = v2Text;
-    extractedFromV2 = true;
-  } else if (typeof v2Content === "string" && v2Content) {
-    textBody = v2Content;
-    extractedFromV2 = true;
-  } else if (v2Content && typeof v2Content === "object") {
+  // v2 content object with media URL
+  if (v2Content && typeof v2Content === "object") {
     const contentObj = v2Content as Record<string, unknown>;
-    if (typeof contentObj.text === "string") {
+    if (contentObj.URL && typeof contentObj.URL === "string") {
+      mediaUrl = contentObj.URL;
+      mediaMimeType = (contentObj.mimetype as string) || null;
+      textBody = (contentObj.caption as string) || "";
+      messageType = mediaMimeType ? mimeToType(mediaMimeType) : (v2Type || "media");
+      extractedFromV2 = true;
+    } else if (typeof contentObj.text === "string") {
       textBody = contentObj.text;
       extractedFromV2 = true;
     }
   }
 
-  if (v2Type) {
+  // v2 flat text fields
+  if (!extractedFromV2) {
+    if (typeof v2Text === "string" && v2Text) {
+      textBody = v2Text;
+      extractedFromV2 = true;
+    } else if (typeof v2Content === "string" && v2Content) {
+      textBody = v2Content;
+      extractedFromV2 = true;
+    }
+  }
+
+  // v2 type mapping
+  if (v2Type && !mediaUrl) {
     const typeMap: Record<string, string> = {
       "text": "text", "chat": "text", "conversation": "text",
       "image": "image", "imageMessage": "image",
@@ -89,12 +104,16 @@ function extractMessageData(body: Record<string, unknown>) {
       "video": "video", "videoMessage": "video",
       "document": "document", "documentMessage": "document",
       "sticker": "sticker", "stickerMessage": "sticker",
+      "media": "media",
     };
-    messageType = typeMap[v2Type] || v2Type;
-    if (messageType !== "text") extractedFromV2 = true;
+    const mapped = typeMap[v2Type];
+    if (mapped && mapped !== "text") {
+      messageType = mapped;
+      extractedFromV2 = true;
+    }
   }
 
-  // Fallback: legacy nested format (message.message.conversation etc.)
+  // Fallback: legacy nested format
   if (!extractedFromV2) {
     const nestedMsg = (topMessage.message && typeof topMessage.message === "object"
       ? topMessage.message : {}) as Record<string, unknown>;
@@ -134,11 +153,16 @@ function extractMessageData(body: Record<string, unknown>) {
     }
   }
 
-  // v2 media fields
+  // v2 top-level media fields fallback
   if (!mediaUrl && topMessage.mediaUrl) mediaUrl = topMessage.mediaUrl as string;
   if (!mediaMimeType && topMessage.mimetype) mediaMimeType = topMessage.mimetype as string;
 
-  console.log(`[extract] jid=${remoteJid} msgId=${messageId} fromMe=${fromMe} type=${messageType} body="${(textBody || "").slice(0, 50)}"`);
+  // If we have mediaUrl but type is still generic, refine from mime
+  if (mediaUrl && messageType === "media" && mediaMimeType) {
+    messageType = mimeToType(mediaMimeType);
+  }
+
+  console.log(`[extract] jid=${remoteJid} msgId=${messageId} fromMe=${fromMe} type=${messageType} media=${!!mediaUrl} body="${(textBody || "").slice(0, 50)}"`);
 
   return {
     event: eventType,
@@ -180,7 +204,7 @@ Deno.serve(async (req) => {
       textBody, messageType, mediaUrl, mediaMimeType, messageTimestamp,
     } = extractMessageData(body);
 
-    console.log(`[uazapi-webhook] parsed: event=${event} instance=${instanceName} jid=${remoteJid} msgId=${messageId} fromMe=${fromMe} type=${messageType} body="${(textBody || "").slice(0, 40)}"`);
+    console.log(`[uazapi-webhook] parsed: event=${event} instance=${instanceName} jid=${remoteJid} msgId=${messageId} fromMe=${fromMe} type=${messageType} media=${!!mediaUrl} body="${(textBody || "").slice(0, 40)}"`);
 
     // Ignore group messages
     if (remoteJid.includes("@g.us")) {
@@ -219,7 +243,7 @@ Deno.serve(async (req) => {
 
     const direction = fromMe ? "outbound" : "inbound";
 
-    // Find instance: by name, then by api_token, then by owner phone
+    // Find instance
     let instanceId: string | null = null;
     let workspaceId: string | null = null;
 
@@ -235,16 +259,12 @@ Deno.serve(async (req) => {
     if (!instanceId) {
       const webhookToken = (body.token as string) || "";
       if (webhookToken) {
-        console.log(`[uazapi-webhook] trying match by api_token`);
         const { data: inst } = await serviceClient
           .from("whatsapp_instances")
           .select("id, workspace_id")
           .eq("api_token", webhookToken)
           .maybeSingle();
-        if (inst) {
-          instanceId = inst.id; workspaceId = inst.workspace_id;
-          console.log(`[uazapi-webhook] matched by api_token -> ${inst.id}`);
-        }
+        if (inst) { instanceId = inst.id; workspaceId = inst.workspace_id; }
       }
     }
 
@@ -252,28 +272,20 @@ Deno.serve(async (req) => {
       const ownerPhone = (body.owner as string) || "";
       if (ownerPhone) {
         const normalizedOwner = ownerPhone.replace(/\D/g, "");
-        console.log(`[uazapi-webhook] trying match by owner phone: ${normalizedOwner}`);
-        // Try exact match first, then partial
         const { data: inst } = await serviceClient
           .from("whatsapp_instances")
           .select("id, workspace_id, phone")
           .eq("phone", normalizedOwner)
           .maybeSingle();
-
         if (inst) {
           instanceId = inst.id; workspaceId = inst.workspace_id;
-          console.log(`[uazapi-webhook] matched by phone exact: ${inst.phone} -> ${inst.id}`);
         } else {
-          // Partial match (last 10 digits)
           const { data: inst2 } = await serviceClient
             .from("whatsapp_instances")
             .select("id, workspace_id, phone")
             .like("phone", `%${normalizedOwner.slice(-10)}%`)
             .maybeSingle();
-          if (inst2) {
-            instanceId = inst2.id; workspaceId = inst2.workspace_id;
-            console.log(`[uazapi-webhook] matched by phone partial -> ${inst2.id}`);
-          }
+          if (inst2) { instanceId = inst2.id; workspaceId = inst2.workspace_id; }
         }
       }
     }
@@ -285,7 +297,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Find lead by phone
+    // Find lead
     const { data: lead } = await serviceClient
       .from("leads")
       .select("id")
@@ -333,7 +345,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[uazapi-webhook] stored ${direction} ${messageType} from ${phone} body="${(textBody || "").slice(0, 30)}" lead=${lead?.id || "unknown"}`);
+    console.log(`[uazapi-webhook] stored ${direction} ${messageType} from ${phone} body="${(textBody || "").slice(0, 30)}" media=${!!mediaUrl} lead=${lead?.id || "unknown"}`);
 
     return new Response(
       JSON.stringify({ ok: true, phone, lead_id: lead?.id || null, direction, message_type: messageType }),

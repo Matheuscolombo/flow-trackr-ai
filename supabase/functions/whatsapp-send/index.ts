@@ -26,30 +26,26 @@ interface SendAttempt {
   body: Record<string, unknown>;
 }
 
-function buildAttempts(baseUrl: string, token: string, number: string, text: string): SendAttempt[] {
+function buildTextAttempts(baseUrl: string, token: string, number: string, text: string): SendAttempt[] {
   return [
-    // UAZAPI v2 official: POST /send/text with token header
     {
       label: "v2 /send/text + token header",
       url: `${baseUrl}/send/text`,
       headers: { "Content-Type": "application/json", "token": token },
       body: { number, text },
     },
-    // v2 with apikey header variant
     {
       label: "v2 /send/text + apikey header",
       url: `${baseUrl}/send/text`,
       headers: { "Content-Type": "application/json", "apikey": token },
       body: { number, text },
     },
-    // v2 behind /api proxy
     {
       label: "v2 /api/send/text + token header",
       url: `${baseUrl}/api/send/text`,
       headers: { "Content-Type": "application/json", "token": token },
       body: { number, text },
     },
-    // Legacy fallbacks (lower priority)
     {
       label: "legacy /message/sendText + apikey + textMessage",
       url: `${baseUrl}/message/sendText`,
@@ -63,6 +59,64 @@ function buildAttempts(baseUrl: string, token: string, number: string, text: str
       body: { number, text },
     },
   ];
+}
+
+function buildMediaAttempts(
+  baseUrl: string, token: string, number: string,
+  mediaUrl: string, type: string, caption?: string, fileName?: string
+): SendAttempt[] {
+  return [
+    {
+      label: "v2 /send/media + token header",
+      url: `${baseUrl}/send/media`,
+      headers: { "Content-Type": "application/json", "token": token },
+      body: { number, mediaUrl, type, caption: caption || "", fileName: fileName || "" },
+    },
+    {
+      label: "v2 /send/media + apikey header",
+      url: `${baseUrl}/send/media`,
+      headers: { "Content-Type": "application/json", "apikey": token },
+      body: { number, mediaUrl, type, caption: caption || "", fileName: fileName || "" },
+    },
+    {
+      label: "v2 /api/send/media + token header",
+      url: `${baseUrl}/api/send/media`,
+      headers: { "Content-Type": "application/json", "token": token },
+      body: { number, mediaUrl, type, caption: caption || "", fileName: fileName || "" },
+    },
+  ];
+}
+
+async function tryAttempts(attempts: SendAttempt[]) {
+  const attemptResults: Array<{ label: string; status: number; snippet: string }> = [];
+
+  for (const attempt of attempts) {
+    try {
+      console.log(`[whatsapp-send] Trying: ${attempt.label} -> ${attempt.url}`);
+      const res = await fetch(attempt.url, {
+        method: "POST",
+        headers: attempt.headers,
+        body: JSON.stringify(attempt.body),
+      });
+
+      let resBody: unknown;
+      const resText = await res.text();
+      try { resBody = JSON.parse(resText); } catch { resBody = resText; }
+
+      const snippet = typeof resBody === "string" ? resBody.slice(0, 200) : JSON.stringify(resBody).slice(0, 200);
+      console.log(`[whatsapp-send] ${attempt.label}: status=${res.status} body=${snippet}`);
+      attemptResults.push({ label: attempt.label, status: res.status, snippet });
+
+      if (res.ok) {
+        return { ok: true as const, resBody, attempt, attemptResults };
+      }
+    } catch (e) {
+      console.error(`[whatsapp-send] ${attempt.label} error:`, e);
+      attemptResults.push({ label: attempt.label, status: 0, snippet: String(e) });
+    }
+  }
+
+  return { ok: false as const, attemptResults };
 }
 
 Deno.serve(async (req) => {
@@ -94,14 +148,26 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { instance_id, remote_jid, text } = body as {
+    const { instance_id, remote_jid, text, mediaUrl, mediaType, caption, fileName } = body as {
       instance_id: string;
       remote_jid: string;
-      text: string;
+      text?: string;
+      mediaUrl?: string;
+      mediaType?: string;
+      caption?: string;
+      fileName?: string;
     };
 
-    if (!instance_id || !remote_jid || !text) {
-      return new Response(JSON.stringify({ error: "Missing instance_id, remote_jid, or text" }), {
+    if (!instance_id || !remote_jid) {
+      return new Response(JSON.stringify({ error: "Missing instance_id or remote_jid" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Must have either text or mediaUrl
+    if (!text && !mediaUrl) {
+      return new Response(JSON.stringify({ error: "Missing text or mediaUrl" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -147,83 +213,70 @@ Deno.serve(async (req) => {
     }
 
     const number = cleanNumber(remote_jid);
-    console.log(`[whatsapp-send] Sending to ${number} via ${inst.instance_name} at ${baseUrl}`);
+    const isMedia = !!mediaUrl;
+    const msgType = isMedia ? (mediaType || "document") : "text";
 
-    const attempts = buildAttempts(baseUrl, token, number, text);
-    const attemptResults: Array<{ label: string; status: number; snippet: string }> = [];
+    console.log(`[whatsapp-send] Sending ${msgType} to ${number} via ${inst.instance_name} at ${baseUrl}`);
 
-    for (const attempt of attempts) {
-      try {
-        console.log(`[whatsapp-send] Trying: ${attempt.label} -> ${attempt.url}`);
-        const res = await fetch(attempt.url, {
-          method: "POST",
-          headers: attempt.headers,
-          body: JSON.stringify(attempt.body),
-        });
+    const attempts = isMedia
+      ? buildMediaAttempts(baseUrl, token, number, mediaUrl!, msgType, caption, fileName)
+      : buildTextAttempts(baseUrl, token, number, text!);
 
-        let resBody: unknown;
-        const resText = await res.text();
-        try { resBody = JSON.parse(resText); } catch { resBody = resText; }
+    const result = await tryAttempts(attempts);
 
-        const snippet = typeof resBody === "string" ? resBody.slice(0, 200) : JSON.stringify(resBody).slice(0, 200);
-        console.log(`[whatsapp-send] ${attempt.label}: status=${res.status} body=${snippet}`);
-        attemptResults.push({ label: attempt.label, status: res.status, snippet });
+    if (result.ok) {
+      const { resBody, attempt } = result;
+      // Persist outbound message
+      const phone = normPhone(remote_jid);
+      const apiMsgId = typeof resBody === "object" && resBody !== null
+        ? (resBody as Record<string, unknown>).messageId || (resBody as Record<string, unknown>).id || null
+        : null;
+      const messageId = apiMsgId ? String(apiMsgId) : `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-        if (res.ok) {
-          // Success — persist outbound message
-          const phone = normPhone(remote_jid);
-          const apiMsgId = typeof resBody === "object" && resBody !== null
-            ? (resBody as Record<string, unknown>).messageId || (resBody as Record<string, unknown>).id || null
-            : null;
-          const messageId = apiMsgId ? String(apiMsgId) : `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const { error: insertErr } = await serviceClient.from("whatsapp_messages").insert({
+        workspace_id: inst.workspace_id,
+        instance_id: inst.id,
+        lead_id: null,
+        remote_jid,
+        phone,
+        message_id: messageId,
+        direction: "outbound",
+        message_type: msgType,
+        body: text || caption || null,
+        media_url: mediaUrl || null,
+        media_mime_type: null,
+        status: "sent",
+        timestamp_msg: new Date().toISOString(),
+        payload_raw: typeof resBody === "object" ? resBody : { raw: resBody },
+      });
 
-          const { error: insertErr } = await serviceClient.from("whatsapp_messages").insert({
-            workspace_id: inst.workspace_id,
-            instance_id: inst.id,
-            lead_id: null,
-            remote_jid,
-            phone,
-            message_id: messageId,
-            direction: "outbound",
-            message_type: "text",
-            body: text,
-            status: "sent",
-            timestamp_msg: new Date().toISOString(),
-            payload_raw: typeof resBody === "object" ? resBody : { raw: resBody },
-          });
+      if (insertErr) console.error("[whatsapp-send] DB insert error:", insertErr);
 
-          if (insertErr) console.error("[whatsapp-send] DB insert error:", insertErr);
-
-          // Link to lead
-          if (phone) {
-            const { data: lead } = await serviceClient
-              .from("leads")
-              .select("id")
-              .eq("workspace_id", inst.workspace_id)
-              .eq("phone", phone)
-              .maybeSingle();
-            if (lead) {
-              await serviceClient.from("whatsapp_messages")
-                .update({ lead_id: lead.id })
-                .eq("message_id", messageId);
-            }
-          }
-
-          return new Response(JSON.stringify({ ok: true, message_id: messageId, attempt: attempt.label }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+      // Link to lead
+      if (phone) {
+        const { data: lead } = await serviceClient
+          .from("leads")
+          .select("id")
+          .eq("workspace_id", inst.workspace_id)
+          .eq("phone", phone)
+          .maybeSingle();
+        if (lead) {
+          await serviceClient.from("whatsapp_messages")
+            .update({ lead_id: lead.id })
+            .eq("message_id", messageId);
         }
-      } catch (e) {
-        console.error(`[whatsapp-send] ${attempt.label} error:`, e);
-        attemptResults.push({ label: attempt.label, status: 0, snippet: String(e) });
       }
+
+      return new Response(JSON.stringify({ ok: true, message_id: messageId, attempt: attempt.label }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // All attempts failed
-    console.error("[whatsapp-send] All attempts failed:", JSON.stringify(attemptResults));
+    console.error("[whatsapp-send] All attempts failed:", JSON.stringify(result.attemptResults));
     return new Response(JSON.stringify({
       error: "All send attempts failed",
-      attempts: attemptResults.map(a => ({ label: a.label, status: a.status })),
+      attempts: result.attemptResults.map(a => ({ label: a.label, status: a.status })),
     }), {
       status: 502,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

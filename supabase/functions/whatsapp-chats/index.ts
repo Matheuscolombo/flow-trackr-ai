@@ -6,6 +6,29 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+/** Detect specific media type from MIME type string */
+function mimeToType(mime: string): string {
+  if (!mime) return "media";
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("application/") || mime.startsWith("text/")) return "document";
+  return "media";
+}
+
+/** Generate a friendly preview text for the chat list */
+function mediaPreview(messageType: string): string {
+  const icons: Record<string, string> = {
+    image: "📷 Foto",
+    audio: "🎤 Áudio",
+    video: "🎬 Vídeo",
+    document: "📄 Documento",
+    sticker: "🩷 Sticker",
+    media: "📎 Mídia",
+  };
+  return icons[messageType] || `[${messageType}]`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -49,8 +72,6 @@ Deno.serve(async (req) => {
     if (action === "list_chats") {
       const instanceId = url.searchParams.get("instance_id") || null;
 
-      // Get distinct conversations with last message, ordered by recency
-      // Using a raw approach: fetch recent messages grouped by phone
       let query = serviceClient
         .from("whatsapp_messages")
         .select("id, phone, remote_jid, body, direction, message_type, timestamp_msg, instance_id, lead_id")
@@ -70,7 +91,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Group by phone to get conversations
+      // Group by phone
       const chatMap = new Map<string, {
         phone: string;
         remote_jid: string;
@@ -85,10 +106,13 @@ Deno.serve(async (req) => {
 
       for (const msg of messages || []) {
         if (!chatMap.has(msg.phone)) {
+          const preview = msg.message_type === "text"
+            ? (msg.body || "")
+            : (msg.body ? `${mediaPreview(msg.message_type)} ${msg.body}` : mediaPreview(msg.message_type));
           chatMap.set(msg.phone, {
             phone: msg.phone,
             remote_jid: msg.remote_jid,
-            last_message: msg.body || `[${msg.message_type}]`,
+            last_message: preview,
             last_message_type: msg.message_type,
             last_direction: msg.direction,
             last_timestamp: msg.timestamp_msg,
@@ -100,9 +124,6 @@ Deno.serve(async (req) => {
           chatMap.get(msg.phone)!.message_count++;
         }
       }
-
-      // For messages action, also fetch payload_raw to extract body fallback
-      
 
       // Enrich with lead names
       const leadIds = [...new Set([...chatMap.values()].filter(c => c.lead_id).map(c => c.lead_id!))];
@@ -137,7 +158,7 @@ Deno.serve(async (req) => {
       const phone = url.searchParams.get("phone");
       const instanceId = url.searchParams.get("instance_id") || null;
       const limit = parseInt(url.searchParams.get("limit") || "100");
-      const before = url.searchParams.get("before") || null; // cursor for pagination
+      const before = url.searchParams.get("before") || null;
 
       if (!phone) {
         return new Response(JSON.stringify({ error: "Missing phone param" }), {
@@ -170,23 +191,50 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Derive body from payload_raw when body is null (v2 format fix)
+      // Enrich: derive body and media_url from payload_raw when missing
       const enriched = (msgs || []).map((m: Record<string, unknown>) => {
-        if (!m.body && m.payload_raw && typeof m.payload_raw === "object") {
+        let body = m.body as string | null;
+        let mediaUrl = m.media_url as string | null;
+        let mediaMimeType = m.media_mime_type as string | null;
+        let messageType = m.message_type as string;
+
+        if (m.payload_raw && typeof m.payload_raw === "object") {
           const pr = m.payload_raw as Record<string, unknown>;
           const msg = (pr.message || {}) as Record<string, unknown>;
-          const derivedBody =
-            (typeof msg.text === "string" ? msg.text : null) ||
-            (typeof msg.content === "string" ? msg.content : null) ||
-            (msg.content && typeof msg.content === "object" ? (msg.content as Record<string, unknown>).text as string : null) ||
-            null;
-          if (derivedBody) {
-            return { ...m, body: derivedBody, payload_raw: undefined };
+          const content = (msg.content && typeof msg.content === "object" ? msg.content : {}) as Record<string, unknown>;
+
+          // Derive body from payload_raw
+          if (!body) {
+            body =
+              (typeof msg.text === "string" ? msg.text : null) ||
+              (typeof msg.content === "string" ? msg.content : null) ||
+              (typeof content.text === "string" ? content.text : null) ||
+              (typeof content.caption === "string" ? content.caption : null) ||
+              null;
+          }
+
+          // Derive media_url from payload_raw
+          if (!mediaUrl && typeof content.URL === "string") {
+            mediaUrl = content.URL;
+          }
+          if (!mediaMimeType && typeof content.mimetype === "string") {
+            mediaMimeType = content.mimetype;
+          }
+
+          // Refine message_type from 'media' to specific type
+          if (messageType === "media" && mediaMimeType) {
+            messageType = mimeToType(mediaMimeType);
           }
         }
-        // Strip payload_raw from response to reduce bandwidth
+
         const { payload_raw, ...rest } = m as Record<string, unknown>;
-        return rest;
+        return {
+          ...rest,
+          body,
+          media_url: mediaUrl,
+          media_mime_type: mediaMimeType,
+          message_type: messageType,
+        };
       });
 
       return new Response(JSON.stringify({ messages: enriched }), {

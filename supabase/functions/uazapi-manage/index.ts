@@ -855,6 +855,42 @@ Deno.serve(async (req) => {
             else if (!body) messageType = "unknown";
           }
 
+          // Extract media URL and mime type
+          let mediaUrl: string | null = null;
+          let mediaMimeType: string | null = null;
+
+          // v2 format: content object with URL field
+          if (msg.content && typeof msg.content === "object") {
+            const co = msg.content as Record<string, unknown>;
+            if (typeof co.URL === "string") mediaUrl = co.URL;
+            if (typeof co.mimetype === "string") mediaMimeType = co.mimetype;
+            if (!body && typeof co.caption === "string") body = co.caption;
+          }
+          // Also check nested message.content (sync payload may wrap differently)
+          if (!mediaUrl && msgContent && typeof msgContent === "object") {
+            for (const key of ["imageMessage", "videoMessage", "audioMessage", "documentMessage"]) {
+              const sub = (msgContent as Record<string, unknown>)[key];
+              if (sub && typeof sub === "object") {
+                const s = sub as Record<string, unknown>;
+                if (!mediaUrl && typeof s.url === "string") mediaUrl = s.url;
+                if (!mediaMimeType && typeof s.mimetype === "string") mediaMimeType = s.mimetype;
+                if (!body && typeof s.caption === "string") body = s.caption;
+                if (!body && typeof s.fileName === "string") body = s.fileName;
+              }
+            }
+          }
+          // v2 flat media fields
+          if (!mediaUrl && typeof msg.mediaUrl === "string") mediaUrl = msg.mediaUrl;
+          if (!mediaMimeType && typeof msg.mimetype === "string") mediaMimeType = msg.mimetype;
+
+          // Refine messageType from mime if generic
+          if (messageType === "media" && mediaMimeType) {
+            if (mediaMimeType.startsWith("image/")) messageType = "image";
+            else if (mediaMimeType.startsWith("audio/")) messageType = "audio";
+            else if (mediaMimeType.startsWith("video/")) messageType = "video";
+            else if (mediaMimeType.startsWith("application/") || mediaMimeType.startsWith("text/")) messageType = "document";
+          }
+
           return {
             workspace_id: workspace.id,
             instance_id: instanceId,
@@ -864,6 +900,8 @@ Deno.serve(async (req) => {
             body,
             direction: fromMe ? "outbound" : "inbound",
             message_type: messageType,
+            media_url: mediaUrl,
+            media_mime_type: mediaMimeType,
             timestamp_msg: timestamp,
             status: fromMe ? "sent" : "received",
             payload_raw: msg,
