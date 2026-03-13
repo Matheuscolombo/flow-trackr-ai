@@ -37,8 +37,9 @@ function extractMessageData(body: Record<string, unknown>) {
   const eventType = (body.EventType as string) || (body.event as string) || "";
   const instanceName = (body.instanceName as string) || (body.instance as string) || "";
 
-  // UAZAPI v2: message is at top level
+  // UAZAPI v2: message is at top level, chat has remoteJid
   const topMessage = (body.message || {}) as Record<string, unknown>;
+  const chat = (body.chat || {}) as Record<string, unknown>;
   
   // Legacy: data.key / data.message
   const data = (body.data || {}) as Record<string, unknown>;
@@ -46,18 +47,27 @@ function extractMessageData(body: Record<string, unknown>) {
   const legacyMessage = (data.message || {}) as Record<string, unknown>;
 
   // Try v2 first (message.key), then legacy (data.key)
-  const key = (topMessage.key && typeof topMessage.key === "object" ? topMessage.key : legacyKey) as Record<string, unknown>;
+  const msgKey = (topMessage.key && typeof topMessage.key === "object" ? topMessage.key : {}) as Record<string, unknown>;
+  const key = (msgKey.remoteJid ? msgKey : legacyKey) as Record<string, unknown>;
+  
   const msgContent = (topMessage.message && typeof topMessage.message === "object" 
     ? topMessage.message 
     : topMessage.conversation !== undefined ? topMessage 
     : legacyMessage) as Record<string, unknown>;
 
-  const remoteJid = (key.remoteJid as string) || (data.remoteJid as string) || (topMessage.remoteJid as string) || "";
-  const messageId = (key.id as string) || (topMessage.id as string) || (data.messageId as string) || (data.id as string) || "";
-  const fromMe = key.fromMe === true;
+  // remoteJid: try key.remoteJid, chat.remoteJid, chat.id, etc.
+  const remoteJid = (key.remoteJid as string) || 
+    (chat.remoteJid as string) || 
+    (chat.id as string) ||
+    (topMessage.remoteJid as string) ||
+    (data.remoteJid as string) || "";
+  const messageId = (key.id as string) || (msgKey.id as string) || (topMessage.id as string) || (data.messageId as string) || (data.id as string) || "";
+  const fromMe = key.fromMe === true || msgKey.fromMe === true;
 
   // Extract message timestamp  
   const messageTimestamp = topMessage.messageTimestamp || data.messageTimestamp;
+
+  console.log(`[extract] key=${JSON.stringify(key)}, chat=${JSON.stringify(chat)}, msgKey=${JSON.stringify(msgKey)}`);
 
   // Extract body from message content
   let textBody = "";
