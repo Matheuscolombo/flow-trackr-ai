@@ -23,8 +23,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Find all media messages that need re-downloading
-  // Include: CDN URLs (mmg.whatsapp.net) AND storage URLs (to re-download corrupted ones)
+  // Find all media messages - force re-download everything
   const { data: messages, error } = await serviceClient
     .from("whatsapp_messages")
     .select("id, message_id, media_url, media_mime_type, workspace_id, instance_id")
@@ -39,25 +38,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  // For storage URLs, check if the file is actually valid (try HEAD request)
-  const needsDownload: typeof messages = [];
-  for (const m of messages || []) {
-    if (m.media_url?.includes("mmg.whatsapp.net") || m.media_url?.includes("mmg-fna.whatsapp.net")) {
-      needsDownload.push(m);
-    } else if (m.media_url?.includes("supabase.co/storage")) {
-      // Check if stored file is valid
-      try {
-        const headRes = await fetch(m.media_url, { method: "HEAD" });
-        const contentLength = parseInt(headRes.headers.get("content-length") || "0");
-        const ct = (headRes.headers.get("content-type") || "").toLowerCase();
-        if (!headRes.ok || contentLength < 100 || ct.includes("text/html") || ct.includes("xml")) {
-          needsDownload.push(m);
-        }
-      } catch {
-        needsDownload.push(m);
-      }
-    }
-  }
+  const needsDownload = messages || [];
 
   // Get unique instance IDs to fetch UAZAPI credentials
   const instanceIds = [...new Set(needsDownload.map(m => m.instance_id).filter(Boolean))];
