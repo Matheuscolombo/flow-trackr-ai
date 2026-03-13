@@ -969,6 +969,7 @@ const WhatsAppChatPage = () => {
         )}
       </div>
     </div>
+    </>
   );
 };
 
