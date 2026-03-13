@@ -166,7 +166,7 @@ const WhatsAppChatPage = () => {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "whatsapp_messages",
           filter: `workspace_id=eq.${workspaceId}`,
