@@ -226,6 +226,52 @@ const WhatsAppPage = () => {
     }
   };
 
+  const handleUpdateProfile = async (instanceId: string, updates: { profile_name?: string; status_text?: string; profile_pic_base64?: string }) => {
+    setUpdatingProfile(instanceId);
+    const data = await callManage("update_profile", {}, { instance_id: instanceId, ...updates });
+    setUpdatingProfile(null);
+
+    if (data.ok) {
+      setInstances((prev) =>
+        prev.map((i) => {
+          if (i.id !== instanceId) return i;
+          return {
+            ...i,
+            ...(updates.profile_name !== undefined ? { profile_name: updates.profile_name } : {}),
+            ...(updates.status_text !== undefined ? { status_text: updates.status_text } : {}),
+            ...(data.updated?.profile_pic_url ? { profile_pic_url: data.updated.profile_pic_url } : {}),
+          };
+        })
+      );
+      toast({ title: "Perfil atualizado!" });
+    } else {
+      toast({ title: "Erro ao atualizar perfil", description: data.error, variant: "destructive" });
+    }
+  };
+
+  const handlePhotoUpload = async (instanceId: string, file: File) => {
+    setUploadingPicFor(instanceId);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      await handleUpdateProfile(instanceId, { profile_pic_base64: base64 });
+      setUploadingPicFor(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleNameSave = (instanceId: string) => {
+    if (editingNameValue.trim()) {
+      handleUpdateProfile(instanceId, { profile_name: editingNameValue.trim() });
+    }
+    setEditingName(null);
+  };
+
+  const handleStatusSave = (instanceId: string) => {
+    handleUpdateProfile(instanceId, { status_text: editingStatusValue.trim() });
+    setEditingStatus(null);
+  };
+
   const copyToken = async (token: string, id: string) => {
     await navigator.clipboard.writeText(token);
     setCopied(id);
