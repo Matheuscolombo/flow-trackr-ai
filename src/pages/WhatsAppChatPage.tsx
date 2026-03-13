@@ -228,7 +228,7 @@ const WhatsAppChatPage = () => {
     };
   }, [workspaceId]);
 
-  // Polling fallback — reload chats every 10s as safety net
+  // Polling fallback — reload chats + open chat messages every 10s
   useEffect(() => {
     if (!accessToken) return;
     const interval = setInterval(() => {
@@ -236,6 +236,15 @@ const WhatsAppChatPage = () => {
     }, 10000);
     return () => clearInterval(interval);
   }, [accessToken, loadChats]);
+
+  // Polling fallback for open chat messages
+  useEffect(() => {
+    if (!accessToken || !selectedChat) return;
+    const interval = setInterval(() => {
+      loadMessages(selectedChat.phone);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [accessToken, selectedChat, loadMessages]);
 
   // Send message
   const handleSend = async () => {
