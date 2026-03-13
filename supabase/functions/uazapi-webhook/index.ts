@@ -6,6 +6,71 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+/**
+ * Download media from a URL and upload to Supabase Storage.
+ * Returns the permanent public URL, or null if download fails.
+ */
+async function downloadAndStoreMedia(
+  serviceClient: ReturnType<typeof createClient>,
+  mediaUrl: string,
+  workspaceId: string,
+  messageId: string,
+  mimeType: string | null,
+): Promise<string | null> {
+  try {
+    const response = await fetch(mediaUrl, { redirect: "follow" });
+    if (!response.ok) {
+      console.log(`[media-download] failed to fetch: ${response.status} ${response.statusText}`);
+      return null;
+    }
+    const blob = await response.blob();
+    if (blob.size === 0) {
+      console.log("[media-download] empty blob, skipping");
+      return null;
+    }
+    if (blob.size > 20 * 1024 * 1024) {
+      console.log(`[media-download] file too large: ${blob.size} bytes, skipping`);
+      return null;
+    }
+
+    // Determine extension from mime
+    const extMap: Record<string, string> = {
+      "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+      "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/opus": "opus",
+      "audio/ogg; codecs=opus": "ogg",
+      "video/mp4": "mp4", "video/3gpp": "3gp",
+      "application/pdf": "pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    };
+    const ext = (mimeType && extMap[mimeType]) || "bin";
+    const safeId = messageId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const storagePath = `${workspaceId}/${safeId}.${ext}`;
+
+    const { error: uploadErr } = await serviceClient.storage
+      .from("whatsapp-media")
+      .upload(storagePath, blob, {
+        contentType: mimeType || "application/octet-stream",
+        upsert: true,
+      });
+
+    if (uploadErr) {
+      console.error("[media-download] upload error:", uploadErr.message);
+      return null;
+    }
+
+    const { data: publicData } = serviceClient.storage
+      .from("whatsapp-media")
+      .getPublicUrl(storagePath);
+
+    console.log(`[media-download] stored: ${storagePath} (${blob.size} bytes)`);
+    return publicData.publicUrl;
+  } catch (err) {
+    console.error("[media-download] error:", err);
+    return null;
+  }
+}
+
 function normPhone(raw: string): string {
   const cleaned = (raw || "").replace(/@.*$/, "").replace(/\D/g, "");
   if (!cleaned) return "";
