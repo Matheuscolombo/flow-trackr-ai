@@ -35,13 +35,14 @@ async function extractBlobFromResponse(
 
   if (ct.includes("application/json")) {
     const json = await res.json();
-    const base64 = json.base64 || json.data || json.media;
+    // UAZAPI v2 returns base64Data and/or fileURL
+    const base64 = json.base64Data || json.base64 || json.data || json.media;
     if (base64 && typeof base64 === "string") {
       const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
       const blob = new Blob([binary], { type: mimeType || "application/octet-stream" });
       if (blob.size > 0 && blob.size < 20 * 1024 * 1024) return blob;
     }
-    const dlUrl = json.url || json.mediaUrl || json.fileUrl;
+    const dlUrl = json.fileURL || json.url || json.mediaUrl || json.fileUrl;
     if (dlUrl && typeof dlUrl === "string") {
       const dlRes = await fetch(dlUrl, { redirect: "follow" });
       if (dlRes.ok && isValidMediaResponse(dlRes)) {
@@ -67,43 +68,22 @@ async function tryDownload(
 ): Promise<{ blob: Blob; method: string } | null> {
   const shortId = shortMessageId(messageId);
 
+  // UAZAPI v2: POST /message/download { "id": "shortMessageId" }
   const attempts: Array<{ label: string; fn: () => Promise<Response> }> = [
     {
-      label: "POST /chat/downloadMediaMessage (shortId)",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage`, {
+      label: "POST /message/download (shortId)",
+      fn: () => fetch(`${creds.server_url}/message/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": creds.api_token },
-        body: JSON.stringify({ messageId: shortId }),
+        body: JSON.stringify({ id: shortId }),
       }),
     },
     {
-      label: "GET /chat/downloadMediaMessage?messageId (shortId)",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage?messageId=${encodeURIComponent(shortId)}`, {
-        method: "GET",
-        headers: { "token": creds.api_token },
-      }),
-    },
-    {
-      label: "POST /chat/downloadMediaMessage (fullId)",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage`, {
+      label: "POST /message/download (fullId)",
+      fn: () => fetch(`${creds.server_url}/message/download`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "token": creds.api_token },
-        body: JSON.stringify({ messageId }),
-      }),
-    },
-    {
-      label: "GET /chat/downloadMediaMessage/shortId",
-      fn: () => fetch(`${creds.server_url}/chat/downloadMediaMessage/${encodeURIComponent(shortId)}`, {
-        method: "GET",
-        headers: { "token": creds.api_token },
-      }),
-    },
-    {
-      label: "POST /message/downloadMedia (shortId)",
-      fn: () => fetch(`${creds.server_url}/message/downloadMedia`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "token": creds.api_token },
-        body: JSON.stringify({ messageId: shortId }),
+        body: JSON.stringify({ id: messageId }),
       }),
     },
   ];
