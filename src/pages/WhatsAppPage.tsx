@@ -436,26 +436,87 @@ const WhatsAppPage = () => {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Hidden file input for photo upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                const targetId = fileInputRef.current?.dataset.instanceId;
+                if (file && targetId) handlePhotoUpload(targetId, file);
+                e.target.value = "";
+              }}
+            />
             {instances.map((inst) => (
               <Card key={inst.id} className="border-border">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3 min-w-0">
-                      {inst.profile_pic_url ? (
-                        <img
-                          src={inst.profile_pic_url}
-                          alt={inst.profile_name || inst.instance_display_name}
-                          className="w-10 h-10 rounded-full object-cover shrink-0 border border-border"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
-                          <Phone className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <CardTitle className="text-sm font-semibold truncate">
-                          {inst.profile_name || inst.instance_display_name}
-                        </CardTitle>
+                      {/* Clickable photo */}
+                      <button
+                        className="relative group shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-ring"
+                        disabled={inst.status !== "connected" || uploadingPicFor === inst.id}
+                        onClick={() => {
+                          if (fileInputRef.current) {
+                            fileInputRef.current.dataset.instanceId = inst.id;
+                            fileInputRef.current.click();
+                          }
+                        }}
+                        title={inst.status === "connected" ? "Clique para trocar a foto" : "Conecte a instância para trocar a foto"}
+                      >
+                        {uploadingPicFor === inst.id ? (
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : inst.profile_pic_url ? (
+                          <img
+                            src={inst.profile_pic_url}
+                            alt={inst.profile_name || inst.instance_display_name}
+                            className="w-10 h-10 rounded-full object-cover border border-border"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                            <Phone className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        {inst.status === "connected" && uploadingPicFor !== inst.id && (
+                          <div className="absolute inset-0 rounded-full bg-background/70 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <Camera className="w-4 h-4 text-foreground" />
+                          </div>
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        {/* Editable name */}
+                        {editingName === inst.id ? (
+                          <Input
+                            autoFocus
+                            value={editingNameValue}
+                            onChange={(e) => setEditingNameValue(e.target.value)}
+                            onBlur={() => handleNameSave(inst.id)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleNameSave(inst.id); if (e.key === "Escape") setEditingName(null); }}
+                            className="h-6 text-sm font-semibold px-1 py-0"
+                          />
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 group/name text-left max-w-full focus:outline-none"
+                            onClick={() => {
+                              if (inst.status !== "connected") return;
+                              setEditingName(inst.id);
+                              setEditingNameValue(inst.profile_name || inst.instance_display_name);
+                            }}
+                            disabled={inst.status !== "connected"}
+                            title={inst.status === "connected" ? "Clique para editar o nome" : ""}
+                          >
+                            <CardTitle className="text-sm font-semibold truncate">
+                              {inst.profile_name || inst.instance_display_name}
+                            </CardTitle>
+                            {inst.status === "connected" && (
+                              <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover/name:opacity-100 shrink-0 transition-opacity" />
+                            )}
+                          </button>
+                        )}
                         <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                           {inst.instance_name}
                         </p>
@@ -463,6 +524,36 @@ const WhatsAppPage = () => {
                           <p className="text-[10px] text-muted-foreground mt-0.5">
                             +{inst.phone}
                           </p>
+                        )}
+                        {/* Editable status/about */}
+                        {editingStatus === inst.id ? (
+                          <Input
+                            autoFocus
+                            value={editingStatusValue}
+                            onChange={(e) => setEditingStatusValue(e.target.value)}
+                            onBlur={() => handleStatusSave(inst.id)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleStatusSave(inst.id); if (e.key === "Escape") setEditingStatus(null); }}
+                            className="h-5 text-[10px] px-1 py-0 mt-0.5"
+                            placeholder="Status / About"
+                          />
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 group/status text-left max-w-full focus:outline-none mt-0.5"
+                            onClick={() => {
+                              if (inst.status !== "connected") return;
+                              setEditingStatus(inst.id);
+                              setEditingStatusValue(inst.status_text || "");
+                            }}
+                            disabled={inst.status !== "connected"}
+                            title={inst.status === "connected" ? "Clique para editar o status" : ""}
+                          >
+                            <span className="text-[10px] text-muted-foreground italic truncate">
+                              {inst.status_text || (inst.status === "connected" ? "Adicionar status..." : "")}
+                            </span>
+                            {inst.status === "connected" && (
+                              <Pencil className="w-2 h-2 text-muted-foreground opacity-0 group-hover/status:opacity-100 shrink-0 transition-opacity" />
+                            )}
+                          </button>
                         )}
                       </div>
                     </div>
