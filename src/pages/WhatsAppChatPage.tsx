@@ -878,7 +878,7 @@ const WhatsAppChatPage = () => {
                             }`}
                           >
                             {msg.message_type !== "text" ? (
-                              <MediaContent msg={msg} />
+                              <MediaContent msg={msg} onImageClick={(url) => setLightboxUrl(url)} />
                             ) : msg.body ? (
                               <p className="text-xs whitespace-pre-wrap break-words">
                                 {msg.body}
