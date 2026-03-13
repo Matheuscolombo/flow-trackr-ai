@@ -135,13 +135,154 @@ async function postApi(path: string, token: string, body: unknown) {
   return res.json();
 }
 
+/** Image lightbox modal */
+function ImageModal({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/80 hover:text-white z-50"
+      >
+        <X className="w-6 h-6" />
+      </button>
+      <img
+        src={src}
+        alt="Imagem"
+        className="max-w-full max-h-full object-contain rounded-lg"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <a
+        href={src}
+        download
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute bottom-6 right-6 bg-white/20 hover:bg-white/30 text-white rounded-full p-3 backdrop-blur-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Download className="w-5 h-5" />
+      </a>
+    </div>
+  );
+}
+
+/** Audio player with speed controls and progress */
+function AudioPlayer({ src, mime, isOutbound }: { src: string; mime: string | null; isOutbound: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  const [error, setError] = useState(false);
+
+  // Normalize mime for <source> tag
+  const sourceType = (mime || "audio/ogg").replace("; codecs=opus", "");
+
+  const togglePlay = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) {
+      el.pause();
+    } else {
+      el.play().catch(() => setError(true));
+    }
+  };
+
+  const cycleSpeed = () => {
+    const speeds = [1, 1.5, 2];
+    const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
+    setSpeed(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = audioRef.current;
+    if (!el || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    el.currentTime = pct * duration;
+  };
+
+  const formatTime = (s: number) => {
+    if (!s || !isFinite(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 py-1 text-[10px] opacity-70">
+        <Volume2 className="w-3.5 h-3.5" />
+        <span>Áudio indisponível</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 min-w-[180px]">
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onLoadedMetadata={() => {
+          if (audioRef.current) setDuration(audioRef.current.duration);
+        }}
+        onTimeUpdate={() => {
+          if (audioRef.current) setProgress(audioRef.current.currentTime);
+        }}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setProgress(0); }}
+        onError={() => setError(true)}
+      >
+        <source src={src} type={sourceType} />
+      </audio>
+      <button
+        onClick={togglePlay}
+        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+          isOutbound ? "bg-primary-foreground/20 hover:bg-primary-foreground/30" : "bg-foreground/10 hover:bg-foreground/15"
+        }`}
+      >
+        {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div
+          className={`h-1.5 rounded-full cursor-pointer ${
+            isOutbound ? "bg-primary-foreground/20" : "bg-foreground/10"
+          }`}
+          onClick={handleSeek}
+        >
+          <div
+            className={`h-full rounded-full transition-all ${
+              isOutbound ? "bg-primary-foreground/60" : "bg-foreground/40"
+            }`}
+            style={{ width: `${duration ? (progress / duration) * 100 : 0}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between mt-0.5">
+          <span className="text-[9px] opacity-60">
+            {formatTime(playing ? progress : duration)}
+          </span>
+          <button
+            onClick={cycleSpeed}
+            className="text-[9px] opacity-60 hover:opacity-100 font-medium"
+          >
+            {speed}x
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Render media content inside message bubble */
-function MediaContent({ msg }: { msg: Message }) {
+function MediaContent({ msg, onImageClick }: { msg: Message; onImageClick: (url: string) => void }) {
   const { message_type, media_url, media_mime_type, body, direction } = msg;
   const isOutbound = direction === "outbound";
 
   if (!media_url) {
-    // No URL available — show type label
     return (
       <p className="text-[10px] italic opacity-70">
         {mediaTypeLabel(message_type)}
@@ -155,25 +296,36 @@ function MediaContent({ msg }: { msg: Message }) {
   ) : null;
 
   if (message_type === "image" || message_type === "sticker") {
+    const [imgError, setImgError] = useState(false);
+
+    if (imgError) {
+      return (
+        <div>
+          <div className="flex items-center gap-1.5 py-2 text-[10px] opacity-70">
+            <Image className="w-3.5 h-3.5" />
+            <span>Imagem indisponível</span>
+            <a href={media_url} target="_blank" rel="noopener noreferrer" className="underline ml-1">
+              <Download className="w-3 h-3 inline" />
+            </a>
+          </div>
+          {captionEl}
+        </div>
+      );
+    }
+
     return (
       <div>
-        <a href={media_url} target="_blank" rel="noopener noreferrer">
+        <div className="relative group cursor-pointer" onClick={() => onImageClick(media_url)}>
           <img
             src={media_url}
             alt="Imagem"
-            className="rounded max-w-full max-h-60 object-contain cursor-pointer"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.style.display = "none";
-              const fallback = target.nextElementSibling as HTMLElement;
-              if (fallback) fallback.style.display = "flex";
-            }}
+            className="rounded max-w-full max-h-60 object-contain"
+            onError={() => setImgError(true)}
           />
-          <div className="hidden items-center gap-1.5 py-2 text-[10px] opacity-70">
-            <Image className="w-3.5 h-3.5" />
-            <span>Imagem expirada</span>
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded flex items-center justify-center">
+            <ZoomIn className="w-6 h-6 text-white opacity-0 group-hover:opacity-80 transition-opacity drop-shadow-lg" />
           </div>
-        </a>
+        </div>
         {captionEl}
       </div>
     );
@@ -182,10 +334,7 @@ function MediaContent({ msg }: { msg: Message }) {
   if (message_type === "audio") {
     return (
       <div>
-        <audio controls className="max-w-full h-10" preload="none">
-          <source src={media_url} type={media_mime_type || "audio/ogg"} />
-          Áudio não suportado
-        </audio>
+        <AudioPlayer src={media_url} mime={media_mime_type} isOutbound={isOutbound} />
         {captionEl}
       </div>
     );
@@ -197,7 +346,7 @@ function MediaContent({ msg }: { msg: Message }) {
         <video
           controls
           className="rounded max-w-full max-h-60"
-          preload="none"
+          preload="metadata"
         >
           <source src={media_url} type={media_mime_type || "video/mp4"} />
           Vídeo não suportado
@@ -208,21 +357,26 @@ function MediaContent({ msg }: { msg: Message }) {
   }
 
   // document / other
+  const fileName = body || "Documento";
+  const isPdf = (media_mime_type || "").includes("pdf");
+
   return (
     <div>
       <a
         href={media_url}
         target="_blank"
         rel="noopener noreferrer"
-        className={`flex items-center gap-2 py-1.5 px-2 rounded text-xs ${
-          isOutbound ? "bg-primary-foreground/10" : "bg-foreground/5"
-        }`}
+        className={`flex items-center gap-2 py-2 px-3 rounded text-xs ${
+          isOutbound ? "bg-primary-foreground/10 hover:bg-primary-foreground/15" : "bg-foreground/5 hover:bg-foreground/10"
+        } transition-colors`}
       >
-        <FileText className="w-4 h-4 shrink-0" />
-        <span className="truncate flex-1">{body || "Documento"}</span>
-        <Download className="w-3.5 h-3.5 shrink-0 opacity-70" />
+        <FileText className="w-5 h-5 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="truncate block font-medium">{fileName}</span>
+          {isPdf && <span className="text-[9px] opacity-60">PDF</span>}
+        </div>
+        <Download className="w-4 h-4 shrink-0 opacity-70" />
       </a>
-      {body && captionEl}
     </div>
   );
 }
