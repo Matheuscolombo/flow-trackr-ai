@@ -517,13 +517,94 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Find lead
-    const { data: lead } = await serviceClient
-      .from("leads")
-      .select("id")
-      .eq("workspace_id", workspaceId!)
-      .eq("phone", phone)
-      .maybeSingle();
+    // Find lead (with 9th-digit phone normalization)
+    let lead: { id: string } | null = null;
+    {
+      const { data: leadExact } = await serviceClient
+        .from("leads")
+        .select("id")
+        .eq("workspace_id", workspaceId!)
+        .eq("phone", phone)
+        .maybeSingle();
+      lead = leadExact;
+
+      // Try variant with/without 9th digit
+      if (!lead) {
+        const digits = phone.replace(/\D/g, "");
+        let variant: string | null = null;
+        if (digits.length === 13 && digits.startsWith("55")) {
+          variant = `+${digits.slice(0, 4)}${digits.slice(5)}`;
+        } else if (digits.length === 12 && digits.startsWith("55")) {
+          variant = `+${digits.slice(0, 4)}9${digits.slice(4)}`;
+        }
+        if (variant) {
+          const { data: leadVar } = await serviceClient
+            .from("leads")
+            .select("id")
+            .eq("workspace_id", workspaceId!)
+            .eq("phone", variant)
+            .maybeSingle();
+          lead = leadVar;
+        }
+      }
+
+      // Auto-create lead if inbound and not found
+      if (!lead && direction === "inbound" && workspaceId) {
+        // Extract name from payload
+        const topMsg = (body.message || {}) as Record<string, unknown>;
+        const chatObj = (body.chat || {}) as Record<string, unknown>;
+        const contactName =
+          (topMsg.pushName as string) ||
+          (body.pushName as string) ||
+          (chatObj.wa_contactName as string) ||
+          (chatObj.wa_name as string) ||
+          (topMsg.senderName as string) || null;
+
+        // Try to fetch profile pic from UAZAPI
+        let profilePicUrl: string | null = null;
+        const effectiveBaseUrl = uazapiServerUrl || (body.BaseUrl as string) || null;
+        const effectiveToken = uazapiApiToken || (body.token as string) || null;
+        if (effectiveBaseUrl && effectiveToken) {
+          try {
+            const phoneDigits = phone.replace(/\D/g, "");
+            const detailsRes = await fetch(`${effectiveBaseUrl}/chat/details`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", token: effectiveToken },
+              body: JSON.stringify({ number: phoneDigits, preview: true }),
+            });
+            if (detailsRes.ok) {
+              const details = await detailsRes.json();
+              profilePicUrl = (details.imagePreview as string) || (details.profilePicUrl as string) || (details.imgUrl as string) || null;
+              // Use UAZAPI name if we don't have one from payload
+              if (!contactName && (details.wa_name || details.wa_contactName || details.name)) {
+                // contactName is const, handled below
+              }
+            }
+          } catch (e) {
+            console.log("[uazapi-webhook] chat/details failed:", e);
+          }
+        }
+
+        const { data: newLead, error: createErr } = await serviceClient
+          .from("leads")
+          .insert({
+            workspace_id: workspaceId!,
+            phone,
+            name: contactName || null,
+            source: "whatsapp",
+            profile_pic_url: profilePicUrl,
+          })
+          .select("id")
+          .single();
+
+        if (createErr) {
+          console.error("[uazapi-webhook] lead create error:", createErr);
+        } else {
+          lead = newLead;
+          console.log(`[uazapi-webhook] auto-created lead ${newLead.id} for ${phone} name="${contactName}"`);
+        }
+      }
+    }
 
     // Timestamp
     let timestampMsg = new Date().toISOString();

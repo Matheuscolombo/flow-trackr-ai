@@ -129,15 +129,20 @@ Deno.serve(async (req) => {
       const leadIds = [...new Set([...chatMap.values()].filter(c => c.lead_id).map(c => c.lead_id!))];
       let leadNames: Record<string, string> = {};
 
+      let leadInfo: Record<string, { name: string; profile_pic_url: string | null }> = {};
+
       if (leadIds.length > 0) {
         const { data: leads } = await serviceClient
           .from("leads")
-          .select("id, name, email")
+          .select("id, name, email, profile_pic_url")
           .in("id", leadIds);
 
         if (leads) {
           for (const l of leads) {
-            leadNames[l.id] = l.name || l.email || "";
+            leadInfo[l.id] = {
+              name: l.name || l.email || "",
+              profile_pic_url: l.profile_pic_url || null,
+            };
           }
         }
       }
@@ -146,7 +151,8 @@ Deno.serve(async (req) => {
         .sort((a, b) => new Date(b.last_timestamp).getTime() - new Date(a.last_timestamp).getTime())
         .map(c => ({
           ...c,
-          contact_name: c.lead_id ? (leadNames[c.lead_id] || null) : null,
+          contact_name: c.lead_id ? (leadInfo[c.lead_id]?.name || null) : null,
+          profile_pic_url: c.lead_id ? (leadInfo[c.lead_id]?.profile_pic_url || null) : null,
         }));
 
       return new Response(JSON.stringify({ chats }), {
