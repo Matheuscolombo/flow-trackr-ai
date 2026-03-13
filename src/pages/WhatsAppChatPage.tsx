@@ -21,6 +21,8 @@ import {
   Clock,
   Check,
   CheckCheck,
+  PanelRightOpen,
+  PanelRightClose,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ContactPanel } from "@/components/whatsapp/ContactPanel";
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
@@ -44,6 +47,7 @@ interface Chat {
   instance_id: string | null;
   lead_id: string | null;
   contact_name: string | null;
+  profile_pic_url: string | null;
   message_count: number;
 }
 
@@ -423,6 +427,7 @@ const WhatsAppChatPage = () => {
   const [syncProgress, setSyncProgress] = useState("");
   const [uploading, setUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [showContactPanel, setShowContactPanel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -539,6 +544,7 @@ const WhatsAppChatPage = () => {
                   instance_id: newMsg.instance_id,
                   lead_id: newMsg.lead_id,
                   contact_name: null,
+                  profile_pic_url: null,
                   message_count: 1,
                 },
                 ...prev,
@@ -903,9 +909,13 @@ const WhatsAppChatPage = () => {
                     selectedChat?.phone === chat.phone ? "bg-muted" : ""
                   }`}
                 >
-                  <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                    <User className="w-4 h-4 text-primary" />
-                  </div>
+                  {chat.profile_pic_url ? (
+                    <img src={chat.profile_pic_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 mt-0.5" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>'); }} />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
+                      <User className="w-4 h-4 text-primary" />
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium text-foreground truncate">
@@ -950,10 +960,14 @@ const WhatsAppChatPage = () => {
               >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-                <User className="w-4 h-4 text-primary" />
-              </div>
-              <div className="min-w-0">
+              {selectedChat.profile_pic_url ? (
+                <img src={selectedChat.profile_pic_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-primary" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold text-foreground truncate">
                   {selectedChat.contact_name || selectedChat.phone}
                 </h3>
@@ -961,6 +975,19 @@ const WhatsAppChatPage = () => {
                   <p className="text-[10px] text-muted-foreground">{selectedChat.phone}</p>
                 )}
               </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0 hidden lg:flex"
+                onClick={() => setShowContactPanel(!showContactPanel)}
+                title={showContactPanel ? "Fechar painel" : "Info do contato"}
+              >
+                {showContactPanel ? (
+                  <PanelRightClose className="w-4 h-4" />
+                ) : (
+                  <PanelRightOpen className="w-4 h-4" />
+                )}
+              </Button>
             </div>
 
             {/* Messages */}
@@ -1090,6 +1117,18 @@ const WhatsAppChatPage = () => {
           </div>
         )}
       </div>
+
+      {/* Right: Contact Panel */}
+      {selectedChat && showContactPanel && (
+        <ContactPanel
+          phone={selectedChat.phone}
+          leadId={selectedChat.lead_id}
+          contactName={selectedChat.contact_name}
+          profilePicUrl={selectedChat.profile_pic_url}
+          instanceId={selectedChat.instance_id}
+          onClose={() => setShowContactPanel(false)}
+        />
+      )}
     </div>
     </>
   );

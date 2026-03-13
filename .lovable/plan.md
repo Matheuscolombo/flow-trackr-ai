@@ -1,65 +1,43 @@
 
 
-## Fase 1 — Identificacao de Contato + Auto-Sync de Leads
+## Problema: CSV com schema duplo
 
-### O que muda
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-**1. Webhook auto-cria lead quando nao existe**
-- No `uazapi-webhook/index.ts`, apos normalizar o phone e buscar o lead, se nao encontrar:
-  - Buscar tambem variante com/sem 9o digito (13 vs 12 digitos)
-  - Se ainda nao existir, criar lead automaticamente com `source: 'whatsapp'`, `name` extraido do payload (`wa_contactName`, `wa_name`, `pushName`)
-  - Chamar `/chat/details` da UAZAPI (com `preview: true`) para puxar foto e nome verificado
-  - Salvar `profile_pic_url` no campo metadata do lead (ou nova coluna)
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-**2. Nova coluna `profile_pic_url` na tabela `leads`**
-- Migracao SQL: `ALTER TABLE leads ADD COLUMN profile_pic_url text;`
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-**3. Nova Edge Function `whatsapp-contact-info`**
-- Recebe `instance_id` + `phone`
-- Chama `/chat/details` com `{ number, preview: true }`
-- Retorna `wa_name`, `wa_contactName`, `imagePreview`, `phone`
-- Usado pelo frontend para enriquecer contatos on-demand
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-**4. Chat list enriquecido com foto e nome**
-- `whatsapp-chats` ja enriquece com lead name — agora tambem retorna `profile_pic_url` do lead
-- Frontend mostra avatar real (foto do WhatsApp) no lugar do icone generico `<User>`
-- Na lista de chats e no header do chat selecionado
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-**5. Painel direito colapsavel — Info do Contato**
-- Novo componente `ContactPanel` ao lado do thread de mensagens
-- Mostra: foto grande, nome, telefone, tags do lead, historico de compras, funnel stage
-- Botao para abrir/fechar no header do chat
-- Componente `src/components/whatsapp/ContactPanel.tsx`
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-**6. Normalizacao de phone com/sem 9o digito**
-- Tanto no webhook quanto no whatsapp-send, ao buscar lead por phone:
-  - Tentar phone exato primeiro
-  - Se nao achar, gerar variante: se tem 13 digitos (55+DDD+9+8), tentar sem o 9 (12 digitos) e vice-versa
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
 
----
+### Detalhes técnicos
 
-### Arquivos modificados
-
-| Arquivo | Mudanca |
-|---|---|
-| `supabase/functions/uazapi-webhook/index.ts` | Auto-criar lead + buscar foto via `/chat/details` + normalizacao 9o digito |
-| `supabase/functions/whatsapp-contact-info/index.ts` | Nova edge function |
-| `supabase/functions/whatsapp-chats/index.ts` | Retornar `profile_pic_url` do lead no chat list |
-| `src/pages/WhatsAppChatPage.tsx` | Avatar real, botao painel direito, integrar ContactPanel |
-| `src/components/whatsapp/ContactPanel.tsx` | Novo componente — painel lateral do contato |
-| Migracao SQL | `ALTER TABLE leads ADD COLUMN profile_pic_url text` |
-
-### Migracao SQL
-
-```sql
-ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS profile_pic_url text;
+No `parseCSV`, adicionar detecção de header duplicado:
+```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
 ```
 
-### Ordem de execucao
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
 
-1. Migracao SQL (adicionar coluna)
-2. Edge Function `whatsapp-contact-info` (criar e deploy)
-3. Atualizar `uazapi-webhook` (auto-create lead + foto)
-4. Atualizar `whatsapp-chats` (retornar foto)
-5. Frontend: avatar real + ContactPanel
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 

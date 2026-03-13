@@ -418,6 +418,7 @@ export type Database = {
           name: string | null
           page_url: string | null
           phone: string | null
+          profile_pic_url: string | null
           purchase_count: number
           referral_source: string | null
           region: string | null
@@ -452,6 +453,7 @@ export type Database = {
           name?: string | null
           page_url?: string | null
           phone?: string | null
+          profile_pic_url?: string | null
           purchase_count?: number
           referral_source?: string | null
           region?: string | null
@@ -486,6 +488,7 @@ export type Database = {
           name?: string | null
           page_url?: string | null
           phone?: string | null
+          profile_pic_url?: string | null
           purchase_count?: number
           referral_source?: string | null
           region?: string | null
