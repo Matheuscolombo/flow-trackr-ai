@@ -235,6 +235,10 @@ const WhatsAppPage = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => navigate("/whatsapp/chat")}>
+            <MessagesSquare className="w-3.5 h-3.5 mr-1.5" />
+            Chat
+          </Button>
           <Button size="sm" variant="outline" onClick={fetchInstances} disabled={loading}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
             Atualizar
