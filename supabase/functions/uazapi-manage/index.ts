@@ -676,6 +676,195 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── SYNC MESSAGES (paginated — one chat per call) ──
+    if (req.method === "POST" && action === "sync_messages") {
+      const body = await req.json();
+      const instanceId = body.instance_id;
+      const chatCursor = body.chat_cursor ?? 0; // index of the chat to process
+      const PAGE_SIZE = 50; // messages per chat fetch
+
+      if (!instanceId) {
+        return new Response(JSON.stringify({ error: "instance_id required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: inst } = await supabase
+        .from("whatsapp_instances")
+        .select("*")
+        .eq("id", instanceId)
+        .eq("workspace_id", workspace.id)
+        .single();
+
+      if (!inst || !inst.api_token) {
+        return new Response(JSON.stringify({ error: "Instance not found or no token" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const baseUrl = (inst.server_url || UAZAPI_URL).replace(/\/$/, "");
+      const token = inst.api_token;
+      const instanceName = inst.instance_name;
+
+      // Step 1: Fetch all chats from UAZAPI (cached on first call, pass list from frontend on subsequent)
+      let chatList: Array<{ remoteJid: string; name?: string }> = body.chat_list || [];
+
+      if (chatList.length === 0) {
+        // Try multiple endpoints to get chat list
+        const chatEndpoints = [
+          { url: `${baseUrl}/chat/findChats/${encodeURIComponent(instanceName)}`, method: "GET" },
+          { url: `${baseUrl}/chat/fetchAllChats`, method: "GET" },
+          { url: `${baseUrl}/chat/findChats`, method: "GET" },
+        ];
+
+        for (const ep of chatEndpoints) {
+          try {
+            const res = await fetch(ep.url, {
+              method: ep.method,
+              headers: { "Content-Type": "application/json", token },
+            });
+            if (res.ok) {
+              const data = await res.json();
+              console.log(`[sync_messages] chats from ${ep.url}: ${Array.isArray(data) ? data.length : 'not array'}`);
+              const arr = Array.isArray(data) ? data : (data.chats || data.data || []);
+              chatList = arr
+                .filter((c: Record<string, unknown>) => {
+                  const jid = String(c.remoteJid || c.id || c.jid || "");
+                  return jid.endsWith("@s.whatsapp.net"); // only personal chats, skip groups
+                })
+                .map((c: Record<string, unknown>) => ({
+                  remoteJid: String(c.remoteJid || c.id || c.jid),
+                  name: c.name ? String(c.name) : undefined,
+                }));
+              if (chatList.length > 0) break;
+            }
+          } catch (e) {
+            console.error(`[sync_messages] chat list error:`, e);
+          }
+        }
+
+        if (chatList.length === 0) {
+          return new Response(JSON.stringify({ error: "Could not fetch chat list from UAZAPI", synced: 0, hasMore: false }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      // Step 2: Process one chat at the cursor position
+      if (chatCursor >= chatList.length) {
+        return new Response(JSON.stringify({ synced: 0, hasMore: false, totalChats: chatList.length }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const currentChat = chatList[chatCursor];
+      let synced = 0;
+
+      // Fetch messages for this chat
+      const msgEndpoints = [
+        { url: `${baseUrl}/chat/findMessages/${encodeURIComponent(instanceName)}`, method: "POST" },
+        { url: `${baseUrl}/chat/findMessages`, method: "POST" },
+      ];
+
+      let fetchedMsgs: Array<Record<string, unknown>> = [];
+
+      for (const ep of msgEndpoints) {
+        try {
+          const res = await fetch(ep.url, {
+            method: ep.method,
+            headers: { "Content-Type": "application/json", token },
+            body: JSON.stringify({
+              where: { key: { remoteJid: currentChat.remoteJid } },
+              limit: PAGE_SIZE,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            fetchedMsgs = Array.isArray(data) ? data : (data.messages || data.data || []);
+            console.log(`[sync_messages] ${currentChat.remoteJid}: ${fetchedMsgs.length} msgs from ${ep.url}`);
+            break;
+          }
+        } catch (e) {
+          console.error(`[sync_messages] msg fetch error:`, e);
+        }
+      }
+
+      // Step 3: Upsert messages into whatsapp_messages
+      if (fetchedMsgs.length > 0) {
+        const phone = currentChat.remoteJid.replace("@s.whatsapp.net", "");
+
+        const rows = fetchedMsgs.map((msg: Record<string, unknown>) => {
+          const key = (msg.key || {}) as Record<string, unknown>;
+          const msgContent = (msg.message || {}) as Record<string, unknown>;
+          const extText = (msgContent.extendedTextMessage || {}) as Record<string, unknown>;
+
+          const messageId = String(key.id || msg.id || msg.messageId || `sync_${Date.now()}_${Math.random()}`);
+          const fromMe = key.fromMe === true;
+          const timestamp = msg.messageTimestamp
+            ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
+            : new Date().toISOString();
+
+          const body =
+            (msgContent.conversation as string) ||
+            (extText.text as string) ||
+            (msgContent.text as string) ||
+            (msg.body as string) ||
+            null;
+
+          let messageType = "text";
+          if (msgContent.imageMessage) messageType = "image";
+          else if (msgContent.videoMessage) messageType = "video";
+          else if (msgContent.audioMessage) messageType = "audio";
+          else if (msgContent.documentMessage) messageType = "document";
+          else if (msgContent.stickerMessage) messageType = "sticker";
+          else if (!body) messageType = "unknown";
+
+          return {
+            workspace_id: workspace.id,
+            instance_id: instanceId,
+            message_id: messageId,
+            phone,
+            remote_jid: currentChat.remoteJid,
+            body,
+            direction: fromMe ? "outbound" : "inbound",
+            message_type: messageType,
+            timestamp_msg: timestamp,
+            status: fromMe ? "sent" : "received",
+            payload_raw: msg,
+          };
+        });
+
+        // Upsert in batches to avoid payload limits
+        const BATCH = 25;
+        for (let i = 0; i < rows.length; i += BATCH) {
+          const batch = rows.slice(i, i + BATCH);
+          const { error: upsertErr } = await serviceClient
+            .from("whatsapp_messages")
+            .upsert(batch, { onConflict: "message_id", ignoreDuplicates: true });
+          if (upsertErr) {
+            console.error("[sync_messages] upsert error:", upsertErr.message);
+          } else {
+            synced += batch.length;
+          }
+        }
+      }
+
+      const hasMore = chatCursor + 1 < chatList.length;
+
+      return new Response(JSON.stringify({
+        synced,
+        hasMore,
+        chatCursor: chatCursor + 1,
+        totalChats: chatList.length,
+        currentChat: currentChat.remoteJid,
+        chat_list: chatList, // pass back so frontend doesn't re-fetch
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Unknown action" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
