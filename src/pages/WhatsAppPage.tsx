@@ -233,6 +233,58 @@ const WhatsAppPage = () => {
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
             Atualizar
           </Button>
+          <Dialog open={importOpen} onOpenChange={setImportOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                Importar
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Importar Instância Existente</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nome da Instância (slug)</Label>
+                  <Input
+                    placeholder="matheus-colombo-teste"
+                    value={importName}
+                    onChange={(e) => setImportName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nome de Exibição</Label>
+                  <Input
+                    placeholder="Matheus Colombo Teste"
+                    value={importDisplayName}
+                    onChange={(e) => setImportDisplayName(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Token da Instância (UAZAPI)</Label>
+                  <Input
+                    placeholder="eec09ca7-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    value={importToken}
+                    onChange={(e) => setImportToken(e.target.value)}
+                    className="text-sm font-mono"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Token gerado pela UAZAPI ao criar a instância</p>
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" size="sm">Cancelar</Button>
+                </DialogClose>
+                <Button size="sm" onClick={handleImport} disabled={importing || !importName.trim() || !importToken.trim()}>
+                  {importing ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />}
+                  Importar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm">
