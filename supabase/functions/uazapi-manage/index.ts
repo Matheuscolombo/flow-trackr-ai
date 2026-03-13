@@ -793,7 +793,13 @@ Deno.serve(async (req) => {
 
       // Step 3: Upsert messages into whatsapp_messages
       if (fetchedMsgs.length > 0) {
-        const phone = currentChat.remoteJid.replace("@s.whatsapp.net", "");
+        // Normalize phone with +55 prefix
+        const rawPhone = currentChat.remoteJid.replace(/@.*$/, "").replace(/\D/g, "");
+        let phone = rawPhone;
+        if (rawPhone.length === 11) phone = `+55${rawPhone}`;
+        else if (rawPhone.length === 13 && rawPhone.startsWith("55")) phone = `+${rawPhone}`;
+        else if (rawPhone.length === 12 && rawPhone.startsWith("55")) phone = `+${rawPhone}`;
+        else phone = `+55${rawPhone.slice(-11)}`;
 
         const rows = fetchedMsgs.map((msg: Record<string, unknown>) => {
           const key = (msg.key || {}) as Record<string, unknown>;
@@ -801,25 +807,53 @@ Deno.serve(async (req) => {
           const extText = (msgContent.extendedTextMessage || {}) as Record<string, unknown>;
 
           const messageId = String(key.id || msg.id || msg.messageId || `sync_${Date.now()}_${Math.random()}`);
-          const fromMe = key.fromMe === true;
-          const timestamp = msg.messageTimestamp
-            ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
+          // fromMe: check key.fromMe (legacy) AND msg.fromMe (v2 flat)
+          const fromMe = key.fromMe === true || msg.fromMe === true || msg.fromMe === "true";
+          const ts = msg.messageTimestamp ? Number(msg.messageTimestamp) : 0;
+          const timestamp = ts > 0
+            ? new Date(ts > 1e12 ? ts : ts * 1000).toISOString()
             : new Date().toISOString();
 
-          const body =
-            (msgContent.conversation as string) ||
-            (extText.text as string) ||
-            (msgContent.text as string) ||
-            (msg.body as string) ||
-            null;
+          // Extract body: v2 flat (msg.text, msg.content) + legacy nested
+          let body: string | null = null;
+          if (typeof msg.text === "string" && msg.text) {
+            body = msg.text;
+          } else if (typeof msg.content === "string" && msg.content) {
+            body = msg.content;
+          } else if (msg.content && typeof msg.content === "object") {
+            const co = msg.content as Record<string, unknown>;
+            if (typeof co.text === "string") body = co.text;
+          }
+          if (!body) {
+            body =
+              (msgContent.conversation as string) ||
+              (extText.text as string) ||
+              (msgContent.text as string) ||
+              (msg.body as string) ||
+              null;
+          }
 
+          // Message type: v2 flat (msg.type) + legacy nested
           let messageType = "text";
-          if (msgContent.imageMessage) messageType = "image";
-          else if (msgContent.videoMessage) messageType = "video";
-          else if (msgContent.audioMessage) messageType = "audio";
-          else if (msgContent.documentMessage) messageType = "document";
-          else if (msgContent.stickerMessage) messageType = "sticker";
-          else if (!body) messageType = "unknown";
+          const v2Type = (msg.type as string) || (msg.messageType as string) || (msg.mediaType as string) || "";
+          if (v2Type) {
+            const typeMap: Record<string, string> = {
+              "text": "text", "chat": "text", "conversation": "text",
+              "image": "image", "imageMessage": "image",
+              "audio": "audio", "audioMessage": "audio", "ptt": "audio",
+              "video": "video", "videoMessage": "video",
+              "document": "document", "documentMessage": "document",
+              "sticker": "sticker", "stickerMessage": "sticker",
+            };
+            messageType = typeMap[v2Type] || v2Type;
+          } else {
+            if (msgContent.imageMessage) messageType = "image";
+            else if (msgContent.videoMessage) messageType = "video";
+            else if (msgContent.audioMessage) messageType = "audio";
+            else if (msgContent.documentMessage) messageType = "document";
+            else if (msgContent.stickerMessage) messageType = "sticker";
+            else if (!body) messageType = "unknown";
+          }
 
           return {
             workspace_id: workspace.id,

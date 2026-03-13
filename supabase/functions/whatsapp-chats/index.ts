@@ -101,6 +101,9 @@ Deno.serve(async (req) => {
         }
       }
 
+      // For messages action, also fetch payload_raw to extract body fallback
+      
+
       // Enrich with lead names
       const leadIds = [...new Set([...chatMap.values()].filter(c => c.lead_id).map(c => c.lead_id!))];
       let leadNames: Record<string, string> = {};
@@ -145,7 +148,7 @@ Deno.serve(async (req) => {
 
       let query = serviceClient
         .from("whatsapp_messages")
-        .select("id, phone, remote_jid, body, direction, message_type, timestamp_msg, status, media_url, media_mime_type, lead_id, instance_id, message_id")
+        .select("id, phone, remote_jid, body, direction, message_type, timestamp_msg, status, media_url, media_mime_type, lead_id, instance_id, message_id, payload_raw")
         .eq("workspace_id", workspace.id)
         .eq("phone", phone)
         .order("timestamp_msg", { ascending: true })
@@ -167,7 +170,26 @@ Deno.serve(async (req) => {
         });
       }
 
-      return new Response(JSON.stringify({ messages: msgs || [] }), {
+      // Derive body from payload_raw when body is null (v2 format fix)
+      const enriched = (msgs || []).map((m: Record<string, unknown>) => {
+        if (!m.body && m.payload_raw && typeof m.payload_raw === "object") {
+          const pr = m.payload_raw as Record<string, unknown>;
+          const msg = (pr.message || {}) as Record<string, unknown>;
+          const derivedBody =
+            (typeof msg.text === "string" ? msg.text : null) ||
+            (typeof msg.content === "string" ? msg.content : null) ||
+            (msg.content && typeof msg.content === "object" ? (msg.content as Record<string, unknown>).text as string : null) ||
+            null;
+          if (derivedBody) {
+            return { ...m, body: derivedBody, payload_raw: undefined };
+          }
+        }
+        // Strip payload_raw from response to reduce bandwidth
+        const { payload_raw, ...rest } = m as Record<string, unknown>;
+        return rest;
+      });
+
+      return new Response(JSON.stringify({ messages: enriched }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

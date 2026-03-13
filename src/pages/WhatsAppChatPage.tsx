@@ -80,6 +80,10 @@ async function fetchApi(path: string, token: string) {
       },
     }
   );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -96,6 +100,10 @@ async function postApi(path: string, token: string, body: unknown) {
       body: JSON.stringify(body),
     }
   );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -120,10 +128,15 @@ const WhatsAppChatPage = () => {
   // Load chat list
   const loadChats = useCallback(async () => {
     if (!accessToken) return;
-    setLoadingChats(true);
-    const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
-    setChats(data.chats || []);
-    setLoadingChats(false);
+    try {
+      setLoadingChats(true);
+      const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
+      setChats(data.chats || []);
+    } catch (e) {
+      console.error("[loadChats] error:", e);
+    } finally {
+      setLoadingChats(false);
+    }
   }, [accessToken]);
 
   useEffect(() => {
@@ -133,14 +146,19 @@ const WhatsAppChatPage = () => {
   // Load messages for selected chat
   const loadMessages = useCallback(async (phone: string) => {
     if (!accessToken) return;
-    setLoadingMessages(true);
-    const data = await fetchApi(
-      `whatsapp-chats?action=messages&phone=${encodeURIComponent(phone)}`,
-      accessToken
-    );
-    setMessages(data.messages || []);
-    setLoadingMessages(false);
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    try {
+      setLoadingMessages(true);
+      const data = await fetchApi(
+        `whatsapp-chats?action=messages&phone=${encodeURIComponent(phone)}`,
+        accessToken
+      );
+      setMessages(data.messages || []);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    } catch (e) {
+      console.error("[loadMessages] error:", e);
+    } finally {
+      setLoadingMessages(false);
+    }
   }, [accessToken]);
 
   useEffect(() => {
@@ -158,7 +176,7 @@ const WhatsAppChatPage = () => {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "whatsapp_messages",
           filter: `workspace_id=eq.${workspaceId}`,
@@ -246,20 +264,35 @@ const WhatsAppChatPage = () => {
     return () => clearInterval(interval);
   }, [accessToken, selectedChat, loadMessages]);
 
+  // Get first available instance_id for fallback
+  const fallbackInstanceId = chats.find(c => c.instance_id)?.instance_id || null;
+
   // Send message
   const handleSend = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
     const text = messageText.trim();
+    const instanceId = selectedChat.instance_id || fallbackInstanceId;
+    if (!instanceId) {
+      console.error("[handleSend] No instance_id available");
+      return;
+    }
     setMessageText("");
     setSending(true);
 
-    await postApi("whatsapp-send", accessToken, {
-      instance_id: selectedChat.instance_id,
-      remote_jid: selectedChat.remote_jid,
-      text,
-    });
-
-    setSending(false);
+    try {
+      await postApi("whatsapp-send", accessToken, {
+        instance_id: instanceId,
+        remote_jid: selectedChat.remote_jid,
+        text,
+      });
+      // Reload messages immediately after sending
+      await loadMessages(selectedChat.phone);
+    } catch (err) {
+      console.error("[handleSend] send failed:", err);
+      setMessageText(text); // restore text on failure
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
