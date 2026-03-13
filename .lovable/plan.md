@@ -1,43 +1,49 @@
 
 
-## Problema: CSV com schema duplo
+## Plan: Sync Historical Messages from UAZAPI
 
-O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
-- Linha 1: header com 23 colunas (inclui "Nome")
-- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
+### Problem
+The chat only shows messages received AFTER the webhook was set up. Historical messages from the UAZAPI instance aren't synced — so the conversation in the Sentinel chat is nearly empty even though the real WhatsApp has many messages.
 
-Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
+### Solution
+Add a "sync messages" feature that pulls existing chat history from UAZAPI and stores it in `whatsapp_messages`.
 
-## Solução: Tornar o parser de CSV resiliente a schemas duplos
+### Changes
 
-### Alterações em `supabase/functions/import-leads/index.ts`
+**1. Edge Function `uazapi-manage` — new action `sync_messages`**
+- Accepts `{ instance_id }` 
+- Calls UAZAPI endpoints to fetch chat history (try multiple patterns):
+  - `GET /chat/fetchAllChats` or `GET /chat/findChats` — get all conversations
+  - `POST /chat/findMessages/{instanceName}` with `{ where: { key: { remoteJid } } }` — get messages per chat
+- For each message found, upserts into `whatsapp_messages` (using `message_id` conflict key to avoid duplicates)
+- Returns count of synced messages
 
-1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
+**2. Frontend — "Sync" button on WhatsAppChatPage**
+- Add a sync/refresh button in the chat list header
+- On click, calls `uazapi-manage?action=sync_messages` with the first connected instance
+- Shows loading state and toast with result count
+- Reloads chat list after sync
 
-2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
+**3. Auto-sync on import**
+- After importing an instance, automatically trigger `sync_messages` so historical data is immediately available
 
-3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
-
-### Detalhes técnicos
-
-No `parseCSV`, adicionar detecção de header duplicado:
+### UAZAPI Endpoints (from research)
+```text
+GET  /chat/findChats/{instanceName}     → list all chats
+POST /chat/findMessages/{instanceName}  → { where: { key: { remoteJid: "..." } }, limit: 100 }
 ```
-// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
-const matchCount = values.filter(v => headers.includes(v.trim())).length;
-if (matchCount > headers.length * 0.5) continue;
+Headers: `token: <api_token>`
+
+### Flow
+```text
+User clicks Sync → uazapi-manage?action=sync_messages
+  → GET /chat/findChats → list of remoteJids
+  → For each chat: POST /chat/findMessages → upsert into whatsapp_messages
+  → Return { synced: N }
 ```
 
-Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
-```
-// Se email não tem @ mas parece telefone, e nome parece email → trocar
-if (!email.includes("@") && /^\d+$/.test(email)) {
-  const nameVal = getFieldValue(row, "nome", ...);
-  if (nameVal.includes("@")) {
-    phone = normPhone(email);
-    email = normEmail(nameVal);
-  }
-}
-```
-
-Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
+### Implementation order
+1. Add `sync_messages` action to `uazapi-manage` edge function
+2. Add sync button to `WhatsAppChatPage.tsx` header
+3. Trigger auto-sync after instance import
 
