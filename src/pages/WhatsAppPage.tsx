@@ -86,6 +86,11 @@ const WhatsAppPage = () => {
   const [qrData, setQrData] = useState<{ instanceId: string; qrcode: string | null; loading: boolean } | null>(null);
   const [pollingId, setPollingId] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importName, setImportName] = useState("");
+  const [importDisplayName, setImportDisplayName] = useState("");
+  const [importToken, setImportToken] = useState("");
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
