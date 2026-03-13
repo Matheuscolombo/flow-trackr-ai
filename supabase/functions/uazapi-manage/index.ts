@@ -285,7 +285,7 @@ Deno.serve(async (req) => {
         });
       }
 
-      const baseUrl = UAZAPI_URL.replace(/\/$/, "");
+      const baseUrl = (inst.server_url || UAZAPI_URL).replace(/\/$/, "");
       const stateRes = await fetch(`${baseUrl}/instance/connectionState`, {
         headers: { "token": inst.api_token },
       });
