@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_messages_message_id_key ON public.whatsapp_messages (message_id);
