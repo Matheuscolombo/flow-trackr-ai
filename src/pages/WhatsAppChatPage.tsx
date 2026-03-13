@@ -21,6 +21,8 @@ import {
   Clock,
   Check,
   CheckCheck,
+  PanelRightOpen,
+  PanelRightClose,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ContactPanel } from "@/components/whatsapp/ContactPanel";
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
