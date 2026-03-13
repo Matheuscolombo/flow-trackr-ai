@@ -1117,6 +1117,18 @@ const WhatsAppChatPage = () => {
           </div>
         )}
       </div>
+
+      {/* Right: Contact Panel */}
+      {selectedChat && showContactPanel && (
+        <ContactPanel
+          phone={selectedChat.phone}
+          leadId={selectedChat.lead_id}
+          contactName={selectedChat.contact_name}
+          profilePicUrl={selectedChat.profile_pic_url}
+          instanceId={selectedChat.instance_id}
+          onClose={() => setShowContactPanel(false)}
+        />
+      )}
     </div>
     </>
   );
