@@ -228,6 +228,15 @@ const WhatsAppChatPage = () => {
     };
   }, [workspaceId]);
 
+  // Polling fallback — reload chats every 10s as safety net
+  useEffect(() => {
+    if (!accessToken) return;
+    const interval = setInterval(() => {
+      loadChats();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [accessToken, loadChats]);
+
   // Send message
   const handleSend = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
@@ -254,16 +263,24 @@ const WhatsAppChatPage = () => {
   // Sync historical messages
   const handleSync = async () => {
     if (syncing || !accessToken) return;
-    // Get first instance from chats or fetch instances
-    const firstInstanceId = chats.find(c => c.instance_id)?.instance_id;
-    if (!firstInstanceId) {
-      // Try to get instance from the manage endpoint
+    try {
+      // Always fetch instances from the manage endpoint (don't rely on chat data)
+      console.log("[sync] fetching instances...");
       const instData = await fetchApi("uazapi-manage?action=list", accessToken);
       const instances = instData.instances || [];
-      if (instances.length === 0) return;
-      await runSync(instances[0].id);
-    } else {
-      await runSync(firstInstanceId);
+      console.log("[sync] instances found:", instances.length, instances.map((i: { id: string; instance_name: string }) => i.instance_name));
+      if (instances.length === 0) {
+        console.warn("[sync] no instances found");
+        return;
+      }
+      // Use first connected instance
+      const connected = instances.find((i: { status: string }) => i.status === "connected") || instances[0];
+      console.log("[sync] using instance:", connected.id, connected.instance_name);
+      await runSync(connected.id);
+    } catch (e) {
+      console.error("[sync] handleSync error:", e);
+      setSyncing(false);
+      setSyncProgress("");
     }
   };
 
@@ -277,14 +294,19 @@ const WhatsAppChatPage = () => {
 
     while (hasMore) {
       try {
+        console.log(`[sync] processing chat cursor=${chatCursor}...`);
         const result = await postApi("uazapi-manage?action=sync_messages", accessToken, {
           instance_id: instanceId,
           chat_cursor: chatCursor,
           chat_list: chatList,
         });
 
+        console.log("[sync] result:", JSON.stringify(result));
+
         if (result.error && !result.hasMore) {
           console.error("[sync] error:", result.error);
+          setSyncProgress(`Erro: ${result.error}`);
+          await new Promise(r => setTimeout(r, 2000));
           break;
         }
 
@@ -295,15 +317,21 @@ const WhatsAppChatPage = () => {
         setSyncProgress(`Sincronizando... ${chatCursor}/${result.totalChats || "?"} conversas (${totalSynced} msgs)`);
 
         // Small delay to avoid overwhelming
-        if (hasMore) await new Promise(r => setTimeout(r, 300));
+        if (hasMore) await new Promise(r => setTimeout(r, 500));
       } catch (e) {
         console.error("[sync] fetch error:", e);
+        setSyncProgress("Erro de conexão");
+        await new Promise(r => setTimeout(r, 2000));
         break;
       }
     }
 
     setSyncing(false);
-    setSyncProgress("");
+    setSyncProgress(totalSynced > 0 ? `✓ ${totalSynced} mensagens sincronizadas` : "");
+    if (totalSynced > 0) {
+      // Clear progress after 3s
+      setTimeout(() => setSyncProgress(""), 3000);
+    }
     // Reload chats
     await loadChats();
     if (selectedChat) await loadMessages(selectedChat.phone);
@@ -340,14 +368,6 @@ const WhatsAppChatPage = () => {
       >
         {/* Header */}
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0"
-            onClick={() => navigate("/whatsapp")}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
           <h2 className="text-sm font-semibold text-foreground flex-1">Conversas</h2>
           <Button
             size="icon"
