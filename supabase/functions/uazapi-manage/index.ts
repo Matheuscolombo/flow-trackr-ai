@@ -5,6 +5,128 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+type UazJson = Record<string, unknown>;
+
+async function parseJsonResponse(res: Response): Promise<UazJson> {
+  const raw = await res.text();
+  if (!raw) return {};
+
+  try {
+    return JSON.parse(raw) as UazJson;
+  } catch {
+    return { raw };
+  }
+}
+
+function buildTokenHeaders(token: string, apiKey?: string | null): Array<Record<string, string>> {
+  const headers: Array<Record<string, string>> = [
+    { token },
+    { Token: token },
+    { Authorization: token },
+    { Authorization: `Bearer ${token}` },
+  ];
+
+  if (apiKey) {
+    headers.push(
+      { token, apikey: apiKey },
+      { token, admintoken: apiKey },
+      { Authorization: `Bearer ${token}`, apikey: apiKey },
+      { Authorization: token, apikey: apiKey },
+    );
+  }
+
+  return headers;
+}
+
+function normalizeInstanceStatus(rawState: unknown): string {
+  const state = String(rawState ?? "").toLowerCase();
+
+  if (["open", "connected", "online", "ready", "authenticated"].includes(state)) {
+    return "connected";
+  }
+
+  if (["connecting", "qrcode", "qr", "pairing", "pending"].includes(state)) {
+    return "connecting";
+  }
+
+  return "disconnected";
+}
+
+function extractConnectionState(payload: UazJson): { status: string; phone: string | null } {
+  const data = (payload.data && typeof payload.data === "object" ? payload.data : {}) as UazJson;
+  const dataInstance = (data.instance && typeof data.instance === "object" ? data.instance : {}) as UazJson;
+
+  const rawState =
+    payload.state ??
+    payload.status ??
+    data.state ??
+    data.status ??
+    dataInstance.state ??
+    dataInstance.status;
+
+  const rawPhone =
+    payload.phoneNumber ??
+    payload.phone ??
+    data.phoneNumber ??
+    data.phone ??
+    data.number ??
+    dataInstance.phoneNumber ??
+    dataInstance.phone ??
+    dataInstance.number;
+
+  return {
+    status: normalizeInstanceStatus(rawState),
+    phone: rawPhone ? String(rawPhone) : null,
+  };
+}
+
+async function fetchConnectionState(params: {
+  baseUrl: string;
+  instanceName: string;
+  token: string;
+  apiKey?: string | null;
+}) {
+  const { baseUrl, instanceName, token, apiKey } = params;
+  const endpoints = [
+    `${baseUrl}/instance/connectionState/${encodeURIComponent(instanceName)}`,
+    `${baseUrl}/instance/connectionState`,
+  ];
+
+  let lastAttempt: {
+    status: number;
+    data: UazJson;
+    endpoint: string;
+    authHeader: string;
+  } | null = null;
+
+  for (const endpoint of endpoints) {
+    for (const headers of buildTokenHeaders(token, apiKey)) {
+      const res = await fetch(endpoint, {
+        method: "GET",
+        headers,
+      });
+      const data = await parseJsonResponse(res);
+      const authHeader = Object.keys(headers).join(",");
+
+      if (res.ok) {
+        return { ok: true as const, data, endpoint, authHeader };
+      }
+
+      if (!lastAttempt || res.status !== 404) {
+        lastAttempt = { status: res.status, data, endpoint, authHeader };
+      }
+    }
+  }
+
+  return {
+    ok: false as const,
+    status: lastAttempt?.status ?? 404,
+    data: lastAttempt?.data ?? { code: 404, message: "Not Found.", data: {} },
+    endpoint: lastAttempt?.endpoint ?? endpoints[0],
+    authHeader: lastAttempt?.authHeader ?? "token",
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -157,23 +279,32 @@ Deno.serve(async (req) => {
       let detectedPhone: string | null = null;
 
       try {
-        const stateRes = await fetch(`${baseUrl}/instance/connectionState`, {
-          headers: { "token": token },
+        const stateResult = await fetchConnectionState({
+          baseUrl,
+          instanceName,
+          token,
+          apiKey: UAZAPI_API_KEY,
         });
-        const stateData = await stateRes.json();
-        console.log("[uazapi-manage] import validation:", JSON.stringify(stateData));
 
-        if (!stateRes.ok) {
-          return new Response(JSON.stringify({ error: "Invalid token or instance not found on UAZAPI", detail: stateData }), {
+        if (!stateResult.ok) {
+          return new Response(JSON.stringify({
+            error: "Invalid token or instance not found on UAZAPI",
+            detail: stateResult.data,
+            debug: {
+              endpoint: stateResult.endpoint,
+              auth_header: stateResult.authHeader,
+              status_code: stateResult.status,
+            },
+          }), {
             status: 400,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
 
-        detectedStatus = stateData.state === "open" ? "connected"
-          : stateData.state === "connecting" ? "connecting"
-          : "disconnected";
-        detectedPhone = stateData.phoneNumber || stateData.phone || null;
+        console.log("[uazapi-manage] import validation:", JSON.stringify(stateResult.data));
+        const parsed = extractConnectionState(stateResult.data);
+        detectedStatus = parsed.status;
+        detectedPhone = parsed.phone;
       } catch (e) {
         console.error("[uazapi-manage] import validation error:", e);
         return new Response(JSON.stringify({ error: "Could not reach UAZAPI to validate token" }), {
@@ -286,23 +417,39 @@ Deno.serve(async (req) => {
       }
 
       const baseUrl = (inst.server_url || UAZAPI_URL).replace(/\/$/, "");
-      const stateRes = await fetch(`${baseUrl}/instance/connectionState`, {
-        headers: { "token": inst.api_token },
+      const stateResult = await fetchConnectionState({
+        baseUrl,
+        instanceName: inst.instance_name,
+        token: inst.api_token,
+        apiKey: UAZAPI_API_KEY,
       });
 
-      const stateData = await stateRes.json();
-      const newStatus = stateData.state === "open" ? "connected"
-        : stateData.state === "connecting" ? "connecting"
-        : "disconnected";
+      if (!stateResult.ok) {
+        return new Response(JSON.stringify({
+          error: "Failed to read instance status on UAZAPI",
+          detail: stateResult.data,
+          debug: {
+            endpoint: stateResult.endpoint,
+            auth_header: stateResult.authHeader,
+            status_code: stateResult.status,
+          },
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const parsed = extractConnectionState(stateResult.data);
+      const newStatus = parsed.status;
 
       // Update status in DB
-      const phone = stateData.phoneNumber || stateData.phone || inst.phone;
+      const phone = parsed.phone || inst.phone;
       await serviceClient
         .from("whatsapp_instances")
         .update({ status: newStatus, phone: phone || inst.phone })
         .eq("id", instanceId);
 
-      return new Response(JSON.stringify({ status: newStatus, detail: stateData }), {
+      return new Response(JSON.stringify({ status: newStatus, detail: stateResult.data }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
