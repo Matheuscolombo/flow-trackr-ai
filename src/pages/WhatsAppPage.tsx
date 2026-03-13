@@ -223,6 +223,16 @@ const WhatsAppPage = () => {
       setImportToken("");
       setImportServerUrl("https://tracker1.uazapi.com");
       await fetchInstances();
+
+      // Auto-sync historical messages
+      if (data.instance?.id) {
+        toast({ title: "Sincronizando mensagens...", description: "Buscando histórico de conversas do WhatsApp" });
+        callManage("sync_messages", {}, { instance_id: data.instance.id, chat_cursor: 0 })
+          .then(() => {
+            toast({ title: "Sincronização iniciada!", description: "Vá para o Chat para ver o progresso" });
+          })
+          .catch(() => {});
+      }
     }
   };
 
