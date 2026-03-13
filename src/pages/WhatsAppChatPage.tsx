@@ -543,6 +543,7 @@ const WhatsAppChatPage = () => {
                   instance_id: newMsg.instance_id,
                   lead_id: newMsg.lead_id,
                   contact_name: null,
+                  profile_pic_url: null,
                   message_count: 1,
                 },
                 ...prev,
