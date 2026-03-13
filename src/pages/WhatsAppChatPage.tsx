@@ -111,6 +111,8 @@ const WhatsAppChatPage = () => {
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const accessToken = session?.access_token || "";
