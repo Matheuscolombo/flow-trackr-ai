@@ -396,14 +396,16 @@ Deno.serve(async (req) => {
     // Find instance
     let instanceId: string | null = null;
     let workspaceId: string | null = null;
+    let uazapiServerUrl: string | null = null;
+    let uazapiApiToken: string | null = null;
 
     if (instanceName) {
       const { data: inst } = await serviceClient
         .from("whatsapp_instances")
-        .select("id, workspace_id")
+        .select("id, workspace_id, server_url, api_token")
         .eq("instance_name", instanceName)
         .maybeSingle();
-      if (inst) { instanceId = inst.id; workspaceId = inst.workspace_id; }
+      if (inst) { instanceId = inst.id; workspaceId = inst.workspace_id; uazapiServerUrl = inst.server_url; uazapiApiToken = inst.api_token; }
     }
 
     if (!instanceId) {
@@ -411,10 +413,10 @@ Deno.serve(async (req) => {
       if (webhookToken) {
         const { data: inst } = await serviceClient
           .from("whatsapp_instances")
-          .select("id, workspace_id")
+          .select("id, workspace_id, server_url, api_token")
           .eq("api_token", webhookToken)
           .maybeSingle();
-        if (inst) { instanceId = inst.id; workspaceId = inst.workspace_id; }
+        if (inst) { instanceId = inst.id; workspaceId = inst.workspace_id; uazapiServerUrl = inst.server_url; uazapiApiToken = inst.api_token; }
       }
     }
 
@@ -424,18 +426,18 @@ Deno.serve(async (req) => {
         const normalizedOwner = ownerPhone.replace(/\D/g, "");
         const { data: inst } = await serviceClient
           .from("whatsapp_instances")
-          .select("id, workspace_id, phone")
+          .select("id, workspace_id, phone, server_url, api_token")
           .eq("phone", normalizedOwner)
           .maybeSingle();
         if (inst) {
-          instanceId = inst.id; workspaceId = inst.workspace_id;
+          instanceId = inst.id; workspaceId = inst.workspace_id; uazapiServerUrl = inst.server_url; uazapiApiToken = inst.api_token;
         } else {
           const { data: inst2 } = await serviceClient
             .from("whatsapp_instances")
-            .select("id, workspace_id, phone")
+            .select("id, workspace_id, phone, server_url, api_token")
             .like("phone", `%${normalizedOwner.slice(-10)}%`)
             .maybeSingle();
-          if (inst2) { instanceId = inst2.id; workspaceId = inst2.workspace_id; }
+          if (inst2) { instanceId = inst2.id; workspaceId = inst2.workspace_id; uazapiServerUrl = inst2.server_url; uazapiApiToken = inst2.api_token; }
         }
       }
     }
