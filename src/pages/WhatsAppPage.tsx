@@ -79,6 +79,7 @@ async function callManage(action: string, params?: Record<string, string>, body?
 
 const WhatsAppPage = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
