@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
 
       let query = serviceClient
         .from("whatsapp_messages")
-        .select("id, phone, remote_jid, body, direction, message_type, timestamp_msg, status, media_url, media_mime_type, lead_id, instance_id, message_id")
+        .select("id, phone, remote_jid, body, direction, message_type, timestamp_msg, status, media_url, media_mime_type, lead_id, instance_id, message_id, payload_raw")
         .eq("workspace_id", workspace.id)
         .eq("phone", phone)
         .order("timestamp_msg", { ascending: true })
