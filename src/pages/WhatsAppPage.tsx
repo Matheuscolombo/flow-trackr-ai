@@ -200,6 +200,7 @@ const WhatsAppPage = () => {
       setImportName("");
       setImportDisplayName("");
       setImportToken("");
+      setImportServerUrl("https://tracker1.uazapi.com");
       await fetchInstances();
     }
   };
