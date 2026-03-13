@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 /**
@@ -18,60 +19,96 @@ function normPhone(raw: string): string {
 }
 
 /**
- * Extrai dados relevantes do payload da UAZAPI
- * A UAZAPI envia diferentes formatos dependendo do evento
+ * Extrai dados relevantes do payload da UAZAPI v2
+ * 
+ * Formato UAZAPI v2:
+ * {
+ *   BaseUrl, EventType, chat, chatSource, instanceName, message, owner, token
+ * }
+ * 
+ * message pode conter:
+ * { key: { remoteJid, fromMe, id }, message: { conversation, extendedTextMessage, ... }, messageTimestamp, ... }
+ * 
+ * Formato legado:
+ * { event, data: { key: { remoteJid }, message: { ... } } }
  */
 function extractMessageData(body: Record<string, unknown>) {
-  // UAZAPI pode enviar em diferentes formatos
-  // Formato principal: { event, data: { key: { remoteJid, ... }, message: { ... } } }
-  const event = (body.event as string) || "";
-  const data = (body.data || body) as Record<string, unknown>;
-  const key = (data.key || {}) as Record<string, unknown>;
-  const message = (data.message || {}) as Record<string, unknown>;
+  // Detect format: UAZAPI v2 has EventType and message at top level
+  const eventType = (body.EventType as string) || (body.event as string) || "";
+  const instanceName = (body.instanceName as string) || (body.instance as string) || "";
 
-  const remoteJid = (key.remoteJid as string) || (data.remoteJid as string) || "";
-  const messageId = (key.id as string) || (data.messageId as string) || (data.id as string) || "";
-  const fromMe = (key.fromMe as boolean) || false;
+  // UAZAPI v2: message is at top level, chat has remoteJid
+  const topMessage = (body.message || {}) as Record<string, unknown>;
+  const chat = (body.chat || {}) as Record<string, unknown>;
+  
+  // Legacy: data.key / data.message
+  const data = (body.data || {}) as Record<string, unknown>;
+  const legacyKey = (data.key || {}) as Record<string, unknown>;
+  const legacyMessage = (data.message || {}) as Record<string, unknown>;
 
-  // Extrair corpo da mensagem
+  // Try v2 first (message.key), then legacy (data.key)
+  const msgKey = (topMessage.key && typeof topMessage.key === "object" ? topMessage.key : {}) as Record<string, unknown>;
+  const key = (msgKey.remoteJid ? msgKey : legacyKey) as Record<string, unknown>;
+  
+  const msgContent = (topMessage.message && typeof topMessage.message === "object" 
+    ? topMessage.message 
+    : topMessage.conversation !== undefined ? topMessage 
+    : legacyMessage) as Record<string, unknown>;
+
+  // remoteJid: try key.remoteJid, chat.wa_chatid (UAZAPI v2), chat.remoteJid, etc.
+  const remoteJid = (key.remoteJid as string) || 
+    (chat.wa_chatid as string) ||
+    (chat.remoteJid as string) || 
+    (topMessage.remoteJid as string) ||
+    (data.remoteJid as string) || "";
+  const messageId = (key.id as string) || (msgKey.id as string) || (topMessage.id as string) || (data.messageId as string) || (data.id as string) || "";
+  const fromMe = key.fromMe === true || msgKey.fromMe === true;
+
+  // Extract message timestamp  
+  const messageTimestamp = topMessage.messageTimestamp || data.messageTimestamp;
+
+  console.log(`[extract] remoteJid=${remoteJid} msgId=${messageId} fromMe=${fromMe}`);
+
+  // Extract body from message content
   let textBody = "";
   let messageType = "text";
   let mediaUrl: string | null = null;
   let mediaMimeType: string | null = null;
 
-  if (message.conversation) {
-    textBody = message.conversation as string;
+  if (msgContent.conversation) {
+    textBody = msgContent.conversation as string;
     messageType = "text";
-  } else if (message.extendedTextMessage) {
-    const ext = message.extendedTextMessage as Record<string, unknown>;
+  } else if (msgContent.extendedTextMessage) {
+    const ext = msgContent.extendedTextMessage as Record<string, unknown>;
     textBody = (ext.text as string) || "";
     messageType = "text";
-  } else if (message.imageMessage) {
-    const img = message.imageMessage as Record<string, unknown>;
+  } else if (msgContent.imageMessage) {
+    const img = msgContent.imageMessage as Record<string, unknown>;
     textBody = (img.caption as string) || "";
     messageType = "image";
     mediaUrl = (img.url as string) || null;
     mediaMimeType = (img.mimetype as string) || "image/jpeg";
-  } else if (message.audioMessage) {
+  } else if (msgContent.audioMessage) {
     messageType = "audio";
-    const aud = message.audioMessage as Record<string, unknown>;
+    const aud = msgContent.audioMessage as Record<string, unknown>;
     mediaMimeType = (aud.mimetype as string) || "audio/ogg";
-  } else if (message.videoMessage) {
-    const vid = message.videoMessage as Record<string, unknown>;
+  } else if (msgContent.videoMessage) {
+    const vid = msgContent.videoMessage as Record<string, unknown>;
     textBody = (vid.caption as string) || "";
     messageType = "video";
     mediaMimeType = (vid.mimetype as string) || "video/mp4";
-  } else if (message.documentMessage) {
-    const doc = message.documentMessage as Record<string, unknown>;
+  } else if (msgContent.documentMessage) {
+    const doc = msgContent.documentMessage as Record<string, unknown>;
     textBody = (doc.fileName as string) || "";
     messageType = "document";
     mediaMimeType = (doc.mimetype as string) || null;
-  } else if (message.stickerMessage) {
+  } else if (msgContent.stickerMessage) {
     messageType = "sticker";
   }
 
   return {
-    event,
+    event: eventType,
+    instanceName,
     remoteJid,
     messageId,
     fromMe,
@@ -79,6 +116,7 @@ function extractMessageData(body: Record<string, unknown>) {
     messageType,
     mediaUrl,
     mediaMimeType,
+    messageTimestamp,
   };
 }
 
@@ -101,10 +139,11 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
-    console.log("[uazapi-webhook] event:", body.event, "data keys:", Object.keys(body.data || body));
+    console.log("[uazapi-webhook] EventType:", body.EventType || body.event, "keys:", JSON.stringify(Object.keys(body)));
 
     const {
       event,
+      instanceName,
       remoteJid,
       messageId,
       fromMe,
@@ -112,7 +151,10 @@ Deno.serve(async (req) => {
       messageType,
       mediaUrl,
       mediaMimeType,
+      messageTimestamp,
     } = extractMessageData(body);
+
+    console.log(`[uazapi-webhook] parsed: event=${event} instance=${instanceName} jid=${remoteJid} msgId=${messageId} fromMe=${fromMe} type=${messageType}`);
 
     // Ignorar mensagens de grupo
     if (remoteJid.includes("@g.us")) {
@@ -124,9 +166,13 @@ Deno.serve(async (req) => {
     // Ignorar eventos que não são mensagens
     const messageEvents = [
       "messages.upsert",
+      "messages",
       "message",
       "messages.update",
       "message.any",
+      "onMessage",
+      "onMessageReceived",
+      "", // empty = accept
     ];
     if (event && !messageEvents.includes(event)) {
       console.log(`[uazapi-webhook] ignoring event: ${event}`);
@@ -136,6 +182,7 @@ Deno.serve(async (req) => {
     }
 
     if (!remoteJid || !messageId) {
+      console.log(`[uazapi-webhook] missing data: remoteJid="${remoteJid}" messageId="${messageId}"`);
       return new Response(JSON.stringify({ error: "Missing remoteJid or messageId" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -152,11 +199,7 @@ Deno.serve(async (req) => {
 
     const direction = fromMe ? "outbound" : "inbound";
 
-    // Identificar a instância pela qual a mensagem chegou
-    // UAZAPI envia o nome da instância no payload
-    const instanceName = (body.instance as string) || (body.instanceName as string) ||
-      ((body.data as Record<string, unknown>)?.instance as string) || "";
-
+    // Find instance by name or by owner phone
     let instanceId: string | null = null;
     let workspaceId: string | null = null;
 
@@ -173,9 +216,48 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Fallback: try matching by api_token (UAZAPI v2 sends token in payload)
+    if (!instanceId) {
+      const webhookToken = (body.token as string) || "";
+      if (webhookToken) {
+        console.log(`[uazapi-webhook] trying match by api_token`);
+        const { data: inst } = await serviceClient
+          .from("whatsapp_instances")
+          .select("id, workspace_id")
+          .eq("api_token", webhookToken)
+          .maybeSingle();
+
+        if (inst) {
+          instanceId = inst.id;
+          workspaceId = inst.workspace_id;
+          console.log(`[uazapi-webhook] matched by api_token -> ${inst.id}`);
+        }
+      }
+    }
+
+    // Fallback 2: try matching by owner phone number
+    if (!instanceId) {
+      const ownerPhone = (body.owner as string) || "";
+      if (ownerPhone) {
+        const normalizedOwner = ownerPhone.replace(/\D/g, "");
+        console.log(`[uazapi-webhook] trying match by owner phone: ${normalizedOwner}`);
+        const { data: inst } = await serviceClient
+          .from("whatsapp_instances")
+          .select("id, workspace_id, phone")
+          .like("phone", `%${normalizedOwner.slice(-10)}%`)
+          .maybeSingle();
+
+        if (inst) {
+          instanceId = inst.id;
+          workspaceId = inst.workspace_id;
+          console.log(`[uazapi-webhook] matched by phone: ${inst.phone} -> ${inst.id}`);
+        }
+      }
+    }
+
     // Se não encontrou instância registrada, ignorar
     if (!instanceId) {
-      console.log(`[uazapi-webhook] ignoring: instance "${instanceName}" not registered`);
+      console.log(`[uazapi-webhook] ignoring: instance "${instanceName}" not registered, owner="${body.owner}"`);
       return new Response(JSON.stringify({ ok: true, action: "instance_not_registered" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -189,7 +271,17 @@ Deno.serve(async (req) => {
       .eq("phone", phone)
       .maybeSingle();
 
-    // Inserir mensagem (com ON CONFLICT para evitar duplicatas)
+    // Calcular timestamp da mensagem
+    let timestampMsg = new Date().toISOString();
+    if (messageTimestamp) {
+      const ts = Number(messageTimestamp);
+      if (ts > 0) {
+        // UAZAPI sends epoch seconds
+        timestampMsg = new Date(ts > 1e12 ? ts : ts * 1000).toISOString();
+      }
+    }
+
+    // Inserir mensagem
     const { error: insertErr } = await serviceClient
       .from("whatsapp_messages")
       .upsert(
@@ -206,7 +298,7 @@ Deno.serve(async (req) => {
           media_url: mediaUrl,
           media_mime_type: mediaMimeType,
           status: direction === "inbound" ? "received" : "sent",
-          timestamp_msg: new Date().toISOString(),
+          timestamp_msg: timestampMsg,
           payload_raw: body,
         },
         { onConflict: "message_id" }
