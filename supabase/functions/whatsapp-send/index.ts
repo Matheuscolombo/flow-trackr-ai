@@ -65,24 +65,45 @@ function buildMediaAttempts(
   baseUrl: string, token: string, number: string,
   mediaUrl: string, type: string, caption?: string, fileName?: string
 ): SendAttempt[] {
+  const common = {
+    number,
+    type,
+    file: mediaUrl,
+    text: caption || "",
+    docName: fileName || "",
+  };
+
   return [
     {
-      label: "v2 /send/media + token header",
+      label: "v2 /send/media + token header + file",
       url: `${baseUrl}/send/media`,
       headers: { "Content-Type": "application/json", "token": token },
-      body: { number, mediaUrl, type, caption: caption || "", fileName: fileName || "" },
+      body: common,
     },
     {
-      label: "v2 /send/media + apikey header",
+      label: "v2 /send/media + apikey header + file",
       url: `${baseUrl}/send/media`,
       headers: { "Content-Type": "application/json", "apikey": token },
-      body: { number, mediaUrl, type, caption: caption || "", fileName: fileName || "" },
+      body: common,
     },
     {
-      label: "v2 /api/send/media + token header",
+      label: "v2 /api/send/media + token header + file",
       url: `${baseUrl}/api/send/media`,
       headers: { "Content-Type": "application/json", "token": token },
-      body: { number, mediaUrl, type, caption: caption || "", fileName: fileName || "" },
+      body: common,
+    },
+    {
+      label: "v2 /send/media + token + legacy keys",
+      url: `${baseUrl}/send/media`,
+      headers: { "Content-Type": "application/json", "token": token },
+      body: {
+        number,
+        type,
+        file: mediaUrl,
+        mediaUrl,
+        caption: caption || "",
+        fileName: fileName || "",
+      },
     },
   ];
 }
