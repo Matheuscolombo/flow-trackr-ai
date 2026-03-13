@@ -14,6 +14,10 @@ import {
   FileText,
   Download,
   X,
+  Play,
+  Pause,
+  Volume2,
+  ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
