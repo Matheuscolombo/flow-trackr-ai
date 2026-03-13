@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   MessageSquare,
@@ -14,6 +14,8 @@ import {
   Check,
   Download,
   MessagesSquare,
+  Pencil,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,6 +57,7 @@ interface WhatsAppInstance {
   updated_at: string;
   profile_name: string | null;
   profile_pic_url: string | null;
+  status_text: string | null;
 }
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -97,6 +100,13 @@ const WhatsAppPage = () => {
   const [importDisplayName, setImportDisplayName] = useState("");
   const [importToken, setImportToken] = useState("");
   const [importServerUrl, setImportServerUrl] = useState("https://tracker1.uazapi.com");
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState("");
+  const [editingStatus, setEditingStatus] = useState<string | null>(null);
+  const [editingStatusValue, setEditingStatusValue] = useState("");
+  const [updatingProfile, setUpdatingProfile] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingPicFor, setUploadingPicFor] = useState<string | null>(null);
 
   const fetchInstances = useCallback(async () => {
     setLoading(true);
@@ -214,6 +224,52 @@ const WhatsAppPage = () => {
       setImportServerUrl("https://tracker1.uazapi.com");
       await fetchInstances();
     }
+  };
+
+  const handleUpdateProfile = async (instanceId: string, updates: { profile_name?: string; status_text?: string; profile_pic_base64?: string }) => {
+    setUpdatingProfile(instanceId);
+    const data = await callManage("update_profile", {}, { instance_id: instanceId, ...updates });
+    setUpdatingProfile(null);
+
+    if (data.ok) {
+      setInstances((prev) =>
+        prev.map((i) => {
+          if (i.id !== instanceId) return i;
+          return {
+            ...i,
+            ...(updates.profile_name !== undefined ? { profile_name: updates.profile_name } : {}),
+            ...(updates.status_text !== undefined ? { status_text: updates.status_text } : {}),
+            ...(data.updated?.profile_pic_url ? { profile_pic_url: data.updated.profile_pic_url } : {}),
+          };
+        })
+      );
+      toast({ title: "Perfil atualizado!" });
+    } else {
+      toast({ title: "Erro ao atualizar perfil", description: data.error, variant: "destructive" });
+    }
+  };
+
+  const handlePhotoUpload = async (instanceId: string, file: File) => {
+    setUploadingPicFor(instanceId);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      await handleUpdateProfile(instanceId, { profile_pic_base64: base64 });
+      setUploadingPicFor(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleNameSave = (instanceId: string) => {
+    if (editingNameValue.trim()) {
+      handleUpdateProfile(instanceId, { profile_name: editingNameValue.trim() });
+    }
+    setEditingName(null);
+  };
+
+  const handleStatusSave = (instanceId: string) => {
+    handleUpdateProfile(instanceId, { status_text: editingStatusValue.trim() });
+    setEditingStatus(null);
   };
 
   const copyToken = async (token: string, id: string) => {
@@ -380,26 +436,87 @@ const WhatsAppPage = () => {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Hidden file input for photo upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                const targetId = fileInputRef.current?.dataset.instanceId;
+                if (file && targetId) handlePhotoUpload(targetId, file);
+                e.target.value = "";
+              }}
+            />
             {instances.map((inst) => (
               <Card key={inst.id} className="border-border">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3 min-w-0">
-                      {inst.profile_pic_url ? (
-                        <img
-                          src={inst.profile_pic_url}
-                          alt={inst.profile_name || inst.instance_display_name}
-                          className="w-10 h-10 rounded-full object-cover shrink-0 border border-border"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
-                          <Phone className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <CardTitle className="text-sm font-semibold truncate">
-                          {inst.profile_name || inst.instance_display_name}
-                        </CardTitle>
+                      {/* Clickable photo */}
+                      <button
+                        className="relative group shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-ring"
+                        disabled={inst.status !== "connected" || uploadingPicFor === inst.id}
+                        onClick={() => {
+                          if (fileInputRef.current) {
+                            fileInputRef.current.dataset.instanceId = inst.id;
+                            fileInputRef.current.click();
+                          }
+                        }}
+                        title={inst.status === "connected" ? "Clique para trocar a foto" : "Conecte a instância para trocar a foto"}
+                      >
+                        {uploadingPicFor === inst.id ? (
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          </div>
+                        ) : inst.profile_pic_url ? (
+                          <img
+                            src={inst.profile_pic_url}
+                            alt={inst.profile_name || inst.instance_display_name}
+                            className="w-10 h-10 rounded-full object-cover border border-border"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                            <Phone className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                        {inst.status === "connected" && uploadingPicFor !== inst.id && (
+                          <div className="absolute inset-0 rounded-full bg-background/70 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <Camera className="w-4 h-4 text-foreground" />
+                          </div>
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        {/* Editable name */}
+                        {editingName === inst.id ? (
+                          <Input
+                            autoFocus
+                            value={editingNameValue}
+                            onChange={(e) => setEditingNameValue(e.target.value)}
+                            onBlur={() => handleNameSave(inst.id)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleNameSave(inst.id); if (e.key === "Escape") setEditingName(null); }}
+                            className="h-6 text-sm font-semibold px-1 py-0"
+                          />
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 group/name text-left max-w-full focus:outline-none"
+                            onClick={() => {
+                              if (inst.status !== "connected") return;
+                              setEditingName(inst.id);
+                              setEditingNameValue(inst.profile_name || inst.instance_display_name);
+                            }}
+                            disabled={inst.status !== "connected"}
+                            title={inst.status === "connected" ? "Clique para editar o nome" : ""}
+                          >
+                            <CardTitle className="text-sm font-semibold truncate">
+                              {inst.profile_name || inst.instance_display_name}
+                            </CardTitle>
+                            {inst.status === "connected" && (
+                              <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover/name:opacity-100 shrink-0 transition-opacity" />
+                            )}
+                          </button>
+                        )}
                         <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                           {inst.instance_name}
                         </p>
@@ -407,6 +524,36 @@ const WhatsAppPage = () => {
                           <p className="text-[10px] text-muted-foreground mt-0.5">
                             +{inst.phone}
                           </p>
+                        )}
+                        {/* Editable status/about */}
+                        {editingStatus === inst.id ? (
+                          <Input
+                            autoFocus
+                            value={editingStatusValue}
+                            onChange={(e) => setEditingStatusValue(e.target.value)}
+                            onBlur={() => handleStatusSave(inst.id)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleStatusSave(inst.id); if (e.key === "Escape") setEditingStatus(null); }}
+                            className="h-5 text-[10px] px-1 py-0 mt-0.5"
+                            placeholder="Status / About"
+                          />
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 group/status text-left max-w-full focus:outline-none mt-0.5"
+                            onClick={() => {
+                              if (inst.status !== "connected") return;
+                              setEditingStatus(inst.id);
+                              setEditingStatusValue(inst.status_text || "");
+                            }}
+                            disabled={inst.status !== "connected"}
+                            title={inst.status === "connected" ? "Clique para editar o status" : ""}
+                          >
+                            <span className="text-[10px] text-muted-foreground italic truncate">
+                              {inst.status_text || (inst.status === "connected" ? "Adicionar status..." : "")}
+                            </span>
+                            {inst.status === "connected" && (
+                              <Pencil className="w-2 h-2 text-muted-foreground opacity-0 group-hover/status:opacity-100 shrink-0 transition-opacity" />
+                            )}
+                          </button>
                         )}
                       </div>
                     </div>

@@ -1,44 +1,43 @@
 
 
-## Plan: Editable WhatsApp Instance Profile
+## Problema: CSV com schema duplo
 
-Allow editing profile picture, display name, and status text directly from the instance card by clicking on the photo or name.
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-### UAZAPI Endpoints (based on research)
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-UAZAPI exposes profile management via these likely endpoints (will try multiple patterns with fallback):
-- **Update Name**: `PUT /profile/setProfileName` with `{ name: "New Name" }` (token header)
-- **Update Status**: `PUT /profile/setStatus` with `{ status: "Available" }` (token header)
-- **Update Picture**: `POST /profile/setProfilePicture` with base64 image in body (token header)
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-### Changes
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-**1. Edge Function (`uazapi-manage/index.ts`) — new action `update_profile`**
-- Accepts `{ instance_id, profile_name?, status_text?, profile_pic_base64? }`
-- Looks up instance token + server_url
-- Calls UAZAPI endpoints for each field provided (tries multiple URL patterns)
-- Updates local DB with new values
-- Returns updated profile data
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-**2. Frontend (`WhatsAppPage.tsx`) — interactive profile editing**
-- **Click on photo**: Opens a hidden file input to select a new image, converts to base64, calls update_profile
-- **Click on name**: Inline editable text field (click to edit, Enter/blur to save)
-- **Status text**: Small editable "About" field under the name
-- Show loading spinner on the photo/field while updating
-- Update local state on success
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-**3. Database**
-- Add `status_text` column to `whatsapp_instances` (for the "About" field)
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
 
-### UI Behavior
-```text
-┌─────────────────────────────────┐
-│  [📷 photo]  Profile Name  ✏️  │  ← click photo to upload, click name to edit
-│             @instance-slug      │
-│             +5511999999999      │
-│             "Available 24h" ✏️  │  ← editable status/about
-│  [token...]  [copy]             │
-│  [QR] [Status] [🗑️]            │
-└─────────────────────────────────┘
+### Detalhes técnicos
+
+No `parseCSV`, adicionar detecção de header duplicado:
 ```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
+```
+
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
+
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 
