@@ -971,15 +971,20 @@ const WhatsAppChatPage = () => {
                             {msg.message_type === "text" && !msg.body && (
                               <p className="text-[10px] italic opacity-70">[mensagem vazia]</p>
                             )}
-                            <p
-                              className={`text-[9px] mt-0.5 text-right ${
+                            <div
+                              className={`flex items-center justify-end gap-1 mt-0.5 ${
                                 msg.direction === "outbound"
                                   ? "text-primary-foreground/60"
                                   : "text-muted-foreground"
                               }`}
                             >
-                              {formatMessageTime(msg.timestamp_msg)}
-                            </p>
+                              <span className="text-[9px]">
+                                {formatMessageTime(msg.timestamp_msg)}
+                              </span>
+                              {msg.direction === "outbound" && (
+                                <MessageStatusIcon status={msg.status} />
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
