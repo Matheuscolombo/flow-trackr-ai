@@ -18,6 +18,9 @@ import {
   Pause,
   Volume2,
   ZoomIn,
+  Clock,
+  Check,
+  CheckCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
