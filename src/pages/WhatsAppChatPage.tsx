@@ -100,6 +100,29 @@ function detectMediaType(file: File): string {
   return "document";
 }
 
+/** Message status indicator (✓ ✓✓ blue ✓✓) */
+function MessageStatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case "pending":
+      return <Clock className="w-3 h-3" />;
+    case "sent":
+    case "SERVER_ACK":
+      return <Check className="w-3 h-3" />;
+    case "delivered":
+    case "DELIVERY_ACK":
+      return <CheckCheck className="w-3 h-3" />;
+    case "read":
+    case "READ":
+    case "PLAYED":
+      return <CheckCheck className="w-3 h-3 text-blue-400" />;
+    case "failed":
+    case "ERROR":
+      return <span className="text-[9px]">!</span>;
+    default:
+      return <Check className="w-3 h-3" />;
+  }
+}
+
 async function fetchApi(path: string, token: string) {
   const res = await fetch(
     `https://${projectId}.supabase.co/functions/v1/${path}`,
