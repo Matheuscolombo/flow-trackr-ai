@@ -15,6 +15,11 @@ function normPhone(raw: string): string {
   return `+55${cleaned.slice(-11)}`;
 }
 
+/** Clean number: remove @s.whatsapp.net suffix, keep only digits */
+function cleanNumber(raw: string): string {
+  return (raw || "").replace(/@.*$/, "").replace(/\D/g, "");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -28,13 +33,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Auth: extract user from JWT
     const authHeader = req.headers.get("Authorization") || "";
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Verify the user
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -60,7 +63,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch instance (verify ownership via workspace)
+    // Fetch instance
     const { data: inst, error: instErr } = await serviceClient
       .from("whatsapp_instances")
       .select("id, workspace_id, instance_name, api_token, server_url, status")
@@ -99,90 +102,113 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Send via UAZAPI
-    const sendUrl = `${baseUrl}/message/sendText/${inst.instance_name}`;
-    console.log(`[whatsapp-send] POST ${sendUrl}`);
+    const number = cleanNumber(remote_jid);
+    console.log(`[whatsapp-send] Sending to ${number} via ${inst.instance_name} at ${baseUrl}`);
 
-    const uazRes = await fetch(sendUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "token": token,
+    // Try multiple endpoint/payload/header combinations
+    const attempts = [
+      {
+        label: "sendText with textMessage body + apikey header",
+        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
+        headers: { "Content-Type": "application/json", "apikey": token },
+        body: { number, textMessage: { text } },
       },
-      body: JSON.stringify({
-        number: remote_jid,
-        text: text,
-      }),
-    });
+      {
+        label: "sendText with text body + apikey header",
+        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
+        headers: { "Content-Type": "application/json", "apikey": token },
+        body: { number, text },
+      },
+      {
+        label: "sendText with token header",
+        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
+        headers: { "Content-Type": "application/json", "token": token },
+        body: { number, textMessage: { text } },
+      },
+      {
+        label: "sendText with token header + simple body",
+        url: `${baseUrl}/message/sendText/${inst.instance_name}`,
+        headers: { "Content-Type": "application/json", "token": token },
+        body: { number, text },
+      },
+      {
+        label: "sendText no instance in path + apikey",
+        url: `${baseUrl}/message/sendText`,
+        headers: { "Content-Type": "application/json", "apikey": token },
+        body: { number, text, instanceName: inst.instance_name },
+      },
+      {
+        label: "sendMessage endpoint + apikey",
+        url: `${baseUrl}/message/sendMessage/${inst.instance_name}`,
+        headers: { "Content-Type": "application/json", "apikey": token },
+        body: { number, message: text },
+      },
+    ];
 
-    const uazBody = await uazRes.json().catch(() => ({}));
-    console.log(`[whatsapp-send] UAZAPI status=${uazRes.status}`, JSON.stringify(uazBody));
-
-    if (!uazRes.ok) {
-      // Try alternative endpoint format
-      const altUrl = `${baseUrl}/message/sendText`;
-      const altRes = await fetch(altUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "token": token,
-        },
-        body: JSON.stringify({
-          number: remote_jid,
-          text: text,
-          instanceName: inst.instance_name,
-        }),
-      });
-      const altBody = await altRes.json().catch(() => ({}));
-      if (!altRes.ok) {
-        return new Response(JSON.stringify({ error: "Failed to send via UAZAPI", detail: altBody }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+    let lastErr: unknown = null;
+    for (const attempt of attempts) {
+      try {
+        console.log(`[whatsapp-send] Trying: ${attempt.label} -> ${attempt.url}`);
+        const res = await fetch(attempt.url, {
+          method: "POST",
+          headers: attempt.headers,
+          body: JSON.stringify(attempt.body),
         });
+        const resBody = await res.json().catch(() => ({}));
+        console.log(`[whatsapp-send] ${attempt.label}: status=${res.status} body=${JSON.stringify(resBody).slice(0, 200)}`);
+
+        if (res.ok || (res.status >= 200 && res.status < 300)) {
+          // Success! Save outbound message
+          const phone = normPhone(remote_jid);
+          const messageId = `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+          const { error: insertErr } = await serviceClient.from("whatsapp_messages").insert({
+            workspace_id: inst.workspace_id,
+            instance_id: inst.id,
+            lead_id: null,
+            remote_jid,
+            phone,
+            message_id: messageId,
+            direction: "outbound",
+            message_type: "text",
+            body: text,
+            status: "sent",
+            timestamp_msg: new Date().toISOString(),
+            payload_raw: {},
+          });
+
+          if (insertErr) console.error("[whatsapp-send] DB insert error:", insertErr);
+
+          // Link to lead
+          if (phone) {
+            const { data: lead } = await serviceClient
+              .from("leads")
+              .select("id")
+              .eq("workspace_id", inst.workspace_id)
+              .eq("phone", phone)
+              .maybeSingle();
+            if (lead) {
+              await serviceClient.from("whatsapp_messages")
+                .update({ lead_id: lead.id })
+                .eq("message_id", messageId);
+            }
+          }
+
+          return new Response(JSON.stringify({ ok: true, message_id: messageId, attempt: attempt.label }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        lastErr = resBody;
+      } catch (e) {
+        console.error(`[whatsapp-send] ${attempt.label} error:`, e);
+        lastErr = e;
       }
     }
 
-    // Save outbound message to DB
-    const phone = normPhone(remote_jid);
-    const messageId = `out_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    const { error: insertErr } = await serviceClient.from("whatsapp_messages").insert({
-      workspace_id: inst.workspace_id,
-      instance_id: inst.id,
-      lead_id: null, // will be linked later if lead exists
-      remote_jid,
-      phone,
-      message_id: messageId,
-      direction: "outbound",
-      message_type: "text",
-      body: text,
-      status: "sent",
-      timestamp_msg: new Date().toISOString(),
-      payload_raw: {},
-    });
-
-    if (insertErr) {
-      console.error("[whatsapp-send] DB insert error:", insertErr);
-    }
-
-    // Try to link to lead
-    if (phone) {
-      const { data: lead } = await serviceClient
-        .from("leads")
-        .select("id")
-        .eq("workspace_id", inst.workspace_id)
-        .eq("phone", phone)
-        .maybeSingle();
-
-      if (lead) {
-        await serviceClient
-          .from("whatsapp_messages")
-          .update({ lead_id: lead.id })
-          .eq("message_id", messageId);
-      }
-    }
-
-    return new Response(JSON.stringify({ ok: true, message_id: messageId }), {
+    // All attempts failed
+    return new Response(JSON.stringify({ error: "All send attempts failed", detail: lastErr }), {
+      status: 502,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
