@@ -285,14 +285,19 @@ const WhatsAppChatPage = () => {
 
     while (hasMore) {
       try {
+        console.log(`[sync] processing chat cursor=${chatCursor}...`);
         const result = await postApi("uazapi-manage?action=sync_messages", accessToken, {
           instance_id: instanceId,
           chat_cursor: chatCursor,
           chat_list: chatList,
         });
 
+        console.log("[sync] result:", JSON.stringify(result));
+
         if (result.error && !result.hasMore) {
           console.error("[sync] error:", result.error);
+          setSyncProgress(`Erro: ${result.error}`);
+          await new Promise(r => setTimeout(r, 2000));
           break;
         }
 
@@ -303,15 +308,21 @@ const WhatsAppChatPage = () => {
         setSyncProgress(`Sincronizando... ${chatCursor}/${result.totalChats || "?"} conversas (${totalSynced} msgs)`);
 
         // Small delay to avoid overwhelming
-        if (hasMore) await new Promise(r => setTimeout(r, 300));
+        if (hasMore) await new Promise(r => setTimeout(r, 500));
       } catch (e) {
         console.error("[sync] fetch error:", e);
+        setSyncProgress("Erro de conexão");
+        await new Promise(r => setTimeout(r, 2000));
         break;
       }
     }
 
     setSyncing(false);
-    setSyncProgress("");
+    setSyncProgress(totalSynced > 0 ? `✓ ${totalSynced} mensagens sincronizadas` : "");
+    if (totalSynced > 0) {
+      // Clear progress after 3s
+      setTimeout(() => setSyncProgress(""), 3000);
+    }
     // Reload chats
     await loadChats();
     if (selectedChat) await loadMessages(selectedChat.phone);
