@@ -180,6 +180,28 @@ const WhatsAppPage = () => {
     }
   };
 
+  const handleImport = async () => {
+    if (!importName.trim() || !importToken.trim()) return;
+    setImporting(true);
+    const data = await callManage("import", {}, {
+      name: importName.trim(),
+      display_name: importDisplayName.trim() || importName.trim(),
+      token: importToken.trim(),
+    });
+    setImporting(false);
+
+    if (data.error) {
+      toast({ title: "Erro ao importar", description: data.error, variant: "destructive" });
+    } else {
+      toast({ title: "Instância importada!", description: `Status: ${data.status || "desconhecido"}` });
+      setImportOpen(false);
+      setImportName("");
+      setImportDisplayName("");
+      setImportToken("");
+      await fetchInstances();
+    }
+  };
+
   const copyToken = async (token: string, id: string) => {
     await navigator.clipboard.writeText(token);
     setCopied(id);
