@@ -427,6 +427,7 @@ const WhatsAppChatPage = () => {
   const [syncProgress, setSyncProgress] = useState("");
   const [uploading, setUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [showContactPanel, setShowContactPanel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
