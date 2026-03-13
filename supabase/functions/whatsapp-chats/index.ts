@@ -126,8 +126,7 @@ Deno.serve(async (req) => {
       }
 
       // Enrich with lead names
-      const leadIds = [...new Set([...chatMap.values()].filter(c => c.lead_id).map(c => c.lead_id!))];
-      let leadNames: Record<string, string> = {};
+      let leadIds = [...new Set([...chatMap.values()].filter(c => c.lead_id).map(c => c.lead_id!))];
 
       let leadInfo: Record<string, { name: string; profile_pic_url: string | null }> = {};
 
