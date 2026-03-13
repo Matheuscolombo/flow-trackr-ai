@@ -1,0 +1,1 @@
+UPDATE public.whatsapp_instances SET instance_name = 'matheus-colombo-teste' WHERE id = '7709c758-5db2-4178-bf6f-d27e194c69d7';
