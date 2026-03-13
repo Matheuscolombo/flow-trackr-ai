@@ -44,6 +44,7 @@ interface Chat {
   instance_id: string | null;
   lead_id: string | null;
   contact_name: string | null;
+  profile_pic_url: string | null;
   message_count: number;
 }
 
