@@ -87,7 +87,11 @@ async function fetchConnectionState(params: {
   apiKey?: string | null;
 }) {
   const { baseUrl, instanceName, token, apiKey } = params;
+
+  // UAZAPI v2 uses GET /instance/status with header "token"
+  // Also try Evolution API style endpoints as fallback
   const endpoints = [
+    `${baseUrl}/instance/status`,
     `${baseUrl}/instance/connectionState/${encodeURIComponent(instanceName)}`,
     `${baseUrl}/instance/connectionState`,
   ];
@@ -101,19 +105,25 @@ async function fetchConnectionState(params: {
 
   for (const endpoint of endpoints) {
     for (const headers of buildTokenHeaders(token, apiKey)) {
-      const res = await fetch(endpoint, {
-        method: "GET",
-        headers,
-      });
-      const data = await parseJsonResponse(res);
-      const authHeader = Object.keys(headers).join(",");
+      try {
+        const res = await fetch(endpoint, {
+          method: "GET",
+          headers,
+        });
+        const data = await parseJsonResponse(res);
+        const authHeader = Object.keys(headers).join(",");
 
-      if (res.ok) {
-        return { ok: true as const, data, endpoint, authHeader };
-      }
+        console.log(`[fetchConnectionState] ${endpoint} [${authHeader}] → ${res.status}`, JSON.stringify(data));
 
-      if (!lastAttempt || res.status !== 404) {
-        lastAttempt = { status: res.status, data, endpoint, authHeader };
+        if (res.ok) {
+          return { ok: true as const, data, endpoint, authHeader };
+        }
+
+        if (!lastAttempt || res.status !== 404) {
+          lastAttempt = { status: res.status, data, endpoint, authHeader };
+        }
+      } catch (e) {
+        console.error(`[fetchConnectionState] ${endpoint} error:`, e);
       }
     }
   }
