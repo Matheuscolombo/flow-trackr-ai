@@ -960,10 +960,14 @@ const WhatsAppChatPage = () => {
               >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
-              <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-                <User className="w-4 h-4 text-primary" />
-              </div>
-              <div className="min-w-0">
+              {selectedChat.profile_pic_url ? (
+                <img src={selectedChat.profile_pic_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-primary" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold text-foreground truncate">
                   {selectedChat.contact_name || selectedChat.phone}
                 </h3>
@@ -971,6 +975,19 @@ const WhatsAppChatPage = () => {
                   <p className="text-[10px] text-muted-foreground">{selectedChat.phone}</p>
                 )}
               </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0 hidden lg:flex"
+                onClick={() => setShowContactPanel(!showContactPanel)}
+                title={showContactPanel ? "Fechar painel" : "Info do contato"}
+              >
+                {showContactPanel ? (
+                  <PanelRightClose className="w-4 h-4" />
+                ) : (
+                  <PanelRightOpen className="w-4 h-4" />
+                )}
+              </Button>
             </div>
 
             {/* Messages */}
