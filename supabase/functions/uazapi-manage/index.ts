@@ -417,23 +417,39 @@ Deno.serve(async (req) => {
       }
 
       const baseUrl = (inst.server_url || UAZAPI_URL).replace(/\/$/, "");
-      const stateRes = await fetch(`${baseUrl}/instance/connectionState`, {
-        headers: { "token": inst.api_token },
+      const stateResult = await fetchConnectionState({
+        baseUrl,
+        instanceName: inst.instance_name,
+        token: inst.api_token,
+        apiKey: UAZAPI_API_KEY,
       });
 
-      const stateData = await stateRes.json();
-      const newStatus = stateData.state === "open" ? "connected"
-        : stateData.state === "connecting" ? "connecting"
-        : "disconnected";
+      if (!stateResult.ok) {
+        return new Response(JSON.stringify({
+          error: "Failed to read instance status on UAZAPI",
+          detail: stateResult.data,
+          debug: {
+            endpoint: stateResult.endpoint,
+            auth_header: stateResult.authHeader,
+            status_code: stateResult.status,
+          },
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const parsed = extractConnectionState(stateResult.data);
+      const newStatus = parsed.status;
 
       // Update status in DB
-      const phone = stateData.phoneNumber || stateData.phone || inst.phone;
+      const phone = parsed.phone || inst.phone;
       await serviceClient
         .from("whatsapp_instances")
         .update({ status: newStatus, phone: phone || inst.phone })
         .eq("id", instanceId);
 
-      return new Response(JSON.stringify({ status: newStatus, detail: stateData }), {
+      return new Response(JSON.stringify({ status: newStatus, detail: stateResult.data }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
