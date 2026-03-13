@@ -281,6 +281,7 @@ function AudioPlayer({ src, mime, isOutbound }: { src: string; mime: string | nu
 function MediaContent({ msg, onImageClick }: { msg: Message; onImageClick: (url: string) => void }) {
   const { message_type, media_url, media_mime_type, body, direction } = msg;
   const isOutbound = direction === "outbound";
+  const [imgError, setImgError] = useState(false);
 
   if (!media_url) {
     return (
@@ -296,7 +297,6 @@ function MediaContent({ msg, onImageClick }: { msg: Message; onImageClick: (url:
   ) : null;
 
   if (message_type === "image" || message_type === "sticker") {
-    const [imgError, setImgError] = useState(false);
 
     if (imgError) {
       return (
