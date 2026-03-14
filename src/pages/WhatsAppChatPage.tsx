@@ -1676,7 +1676,15 @@ const WhatsAppChatPage = () => {
           contactName={selectedChat.contact_name}
           profilePicUrl={selectedChat.profile_pic_url}
           instanceId={selectedChat.instance_id}
+          workspaceId={workspaceId!}
           onClose={() => setShowContactPanel(false)}
+          onLeadLinked={(newLeadId) => {
+            setChats((prev) =>
+              prev.map((c) =>
+                c.phone === selectedChat.phone ? { ...c, lead_id: newLeadId } : c
+              )
+            );
+          }}
         />
       )}
     </div>
