@@ -640,6 +640,14 @@ const WhatsAppChatPage = () => {
 
     console.log("[msg-action] EDIT save key:", editingMessageKey, "id:", editingMessage.id, "message_id:", editingMessage.message_id);
 
+    try {
+      await runRemoteMessageAction({ action: "edit_message", msg: editingMessage, text: newBody });
+    } catch (err) {
+      console.error("[editMsg] remote edit failed:", err);
+      alert(err instanceof Error ? err.message : "Não consegui editar a mensagem no WhatsApp.");
+      return;
+    }
+
     // Try update by id first (must affect at least 1 row)
     let updated = false;
     if (!editingMessage.id.startsWith("temp_")) {
