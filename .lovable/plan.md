@@ -1,37 +1,43 @@
 
 
-## Plano: Tag da instância na lista de conversas
+## Problema: CSV com schema duplo
 
-### Objetivo
-Exibir uma badge com o nome da instância WhatsApp em cada conversa na lista lateral. Ao passar o mouse, mostrar o número da instância como tooltip.
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-### Abordagem
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-1. **Carregar instâncias ao iniciar** — No `WhatsAppChatPage.tsx`, ao carregar os chats, buscar também as instâncias do workspace (`whatsapp_instances`) e criar um mapa `instanceId → { display_name, phone }` via `useRef` ou `useState`.
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-2. **Exibir badge na lista de chats** — Abaixo do nome do contato (ou ao lado do telefone), renderizar um `<Badge>` pequeno com o `instance_display_name`. Envolver com `<Tooltip>` do Radix mostrando o número da instância (`phone`) no hover.
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-3. **Exibir badge no header do chat aberto** — Mesma lógica no header quando um chat está selecionado.
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-### Arquivos alterados
-- `src/pages/WhatsAppChatPage.tsx`
-  - Importar `Tooltip, TooltipTrigger, TooltipContent, TooltipProvider`
-  - Adicionar estado/ref `instanceMap: Record<string, { name: string; phone: string }>`
-  - Buscar `whatsapp_instances` via supabase client no `useEffect` inicial
-  - Na lista de chats (linha ~1367-1384): adicionar badge com tooltip
-  - No header do chat (linha ~1431-1437): adicionar badge com tooltip
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-### Visual esperado
-```text
-┌─────────────────────────────┐
-│ Lucas Carli                 │
-│ +5544998685747              │
-│ [matheus-colombo-teste]  ← badge
-│ Você: Olá!                  │
-└─────────────────────────────┘
-         ↑ hover no badge:
-    ┌──────────────────┐
-    │ +5544999887766   │  ← tooltip com phone da instância
-    └──────────────────┘
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
+
+### Detalhes técnicos
+
+No `parseCSV`, adicionar detecção de header duplicado:
 ```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
+```
+
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
+
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 

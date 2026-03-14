@@ -48,6 +48,7 @@ import { useNavigate } from "react-router-dom";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ContactPanel } from "@/components/whatsapp/ContactPanel";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
@@ -473,6 +474,7 @@ const WhatsAppChatPage = () => {
   const selectedChatRef = useRef<Chat | null>(null);
   const [deletingChat, setDeletingChat] = useState<string | null>(null);
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(null);
+  const [instanceMap, setInstanceMap] = useState<Record<string, { name: string; phone: string }>>({});
   const [editingOriginalText, setEditingOriginalText] = useState("");
   const lastPresenceSent = useRef(0);
 
@@ -826,6 +828,23 @@ const WhatsAppChatPage = () => {
   useEffect(() => {
     loadChats();
   }, [loadChats]);
+
+  // Load instance map for badge display
+  useEffect(() => {
+    if (!workspaceId) return;
+    supabase
+      .from("whatsapp_instances")
+      .select("id, instance_display_name, phone")
+      .eq("workspace_id", workspaceId)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, { name: string; phone: string }> = {};
+        for (const inst of data) {
+          map[inst.id] = { name: inst.instance_display_name, phone: inst.phone || "" };
+        }
+        setInstanceMap(map);
+      });
+  }, [workspaceId]);
 
   // Load messages for selected chat
   const loadMessages = useCallback(async (phone: string) => {
@@ -1376,6 +1395,22 @@ const WhatsAppChatPage = () => {
                     {chat.contact_name && (
                       <p className="text-[10px] text-muted-foreground truncate">{chat.phone}</p>
                     )}
+                    {chat.instance_id && instanceMap[chat.instance_id] && (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal mt-0.5 cursor-default">
+                                {instanceMap[chat.instance_id].name}
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="text-xs">
+                            {instanceMap[chat.instance_id].phone || "Sem número"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                     <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                       {chat.last_direction === "outbound" && (
                         <span className="text-primary/60">Você: </span>
@@ -1434,6 +1469,22 @@ const WhatsAppChatPage = () => {
                 </h3>
                 {selectedChat.contact_name && (
                   <p className="text-[10px] text-muted-foreground">{selectedChat.phone}</p>
+                )}
+                {selectedChat.instance_id && instanceMap[selectedChat.instance_id] && (
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal cursor-default">
+                            {instanceMap[selectedChat.instance_id].name}
+                          </Badge>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs">
+                        {instanceMap[selectedChat.instance_id].phone || "Sem número"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
               </div>
               <Button
