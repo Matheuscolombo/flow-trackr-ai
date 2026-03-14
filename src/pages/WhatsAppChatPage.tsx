@@ -749,6 +749,11 @@ const WhatsAppChatPage = () => {
       const waName = data.wa_name || null;
       const imagePreview = data.image_preview || null;
       if (waName || imagePreview) {
+        // Cache enriched data so polling doesn't overwrite it
+        enrichedCacheRef.current[key] = {
+          ...(waName ? { name: waName } : {}),
+          ...(imagePreview ? { photo: imagePreview } : {}),
+        };
         setChats((prev) =>
           prev.map((c) =>
             c.phone === key
