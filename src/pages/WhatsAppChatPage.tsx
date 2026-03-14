@@ -1413,7 +1413,7 @@ const WhatsAppChatPage = () => {
                   value={messageText}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  className={`flex-1 text-xs ${editingMessageId ? "border-primary" : ""}`}
+                  className={`flex-1 text-xs ${editingMessageKey ? "border-primary" : ""}`}
                   disabled={sending || uploading}
                 />
                 <Button
