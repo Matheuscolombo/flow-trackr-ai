@@ -503,10 +503,14 @@ const WhatsAppChatPage = () => {
 
   // Delete individual message
   const handleDeleteMessage = async (msgId: string) => {
-    if (!confirm("Excluir esta mensagem?")) return;
-    const { error } = await supabase.from("whatsapp_messages").delete().eq("id", msgId);
-    if (error) { console.error("[deleteMsg]", error); return; }
+    // Remove from UI immediately (optimistic)
     setMessages(prev => prev.filter(m => m.id !== msgId));
+    const { error } = await supabase.from("whatsapp_messages").delete().eq("id", msgId);
+    if (error) {
+      console.error("[deleteMsg]", error);
+      // Reload messages on failure
+      if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+    }
   };
 
   // Start editing message
