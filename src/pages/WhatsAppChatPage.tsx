@@ -541,28 +541,35 @@ const WhatsAppChatPage = () => {
 
     if (!workspaceId) return;
 
-    // Try delete by id first, then fallback to message_id
+    // Try delete by id first, then fallback to message_id (only if 0 rows affected)
     let deleted = false;
     if (!msg.id.startsWith("temp_")) {
-      const { error, count } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .delete()
         .eq("workspace_id", workspaceId)
-        .eq("id", msg.id);
-      console.log("[msg-action] DELETE by id result:", { error, count });
-      if (!error) deleted = true;
+        .eq("id", msg.id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] DELETE by id result:", { error, affected });
+      if (!error && affected > 0) deleted = true;
     }
 
     if (!deleted && msg.message_id && !msg.message_id.startsWith("temp_")) {
-      const { error, count } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .delete()
         .eq("workspace_id", workspaceId)
-        .eq("message_id", msg.message_id);
-      console.log("[msg-action] DELETE by message_id result:", { error, count });
-      if (error) {
-        console.error("[deleteMsg] fallback failed:", error);
-        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        .eq("message_id", msg.message_id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] DELETE by message_id result:", { error, affected });
+      if (error || affected === 0) {
+        console.error("[deleteMsg] delete failed after fallback:", error || "0 rows");
+        if (selectedChatRef.current) await loadMessages(selectedChatRef.current.phone);
+        alert("Não consegui excluir essa mensagem. Tente novamente.");
         return;
       }
     }
