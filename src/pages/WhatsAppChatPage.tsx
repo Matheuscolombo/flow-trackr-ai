@@ -1170,42 +1170,67 @@ const WhatsAppChatPage = () => {
                       {group.messages.map((msg) => (
                         <div
                           key={msg.id}
-                          className={`flex mb-1 ${
+                          className={`flex mb-1 group/msg ${
                             msg.direction === "outbound" ? "justify-end" : "justify-start"
                           }`}
                         >
-                          <div
-                            className={`max-w-[75%] rounded-lg px-3 py-1.5 ${
-                              msg.direction === "outbound"
-                                ? "bg-primary text-primary-foreground rounded-br-sm"
-                                : "bg-muted text-foreground rounded-bl-sm"
-                            }`}
-                          >
-                            {msg.message_type !== "text" ? (
-                              <MediaContent msg={msg} onImageClick={(url) => setLightboxUrl(url)} />
-                            ) : msg.body ? (
-                              <p className="text-xs whitespace-pre-wrap break-words">
-                                {msg.body}
-                              </p>
-                            ) : null}
-                            {/* For text-only messages with no body */}
-                            {msg.message_type === "text" && !msg.body && (
-                              <p className="text-[10px] italic opacity-70">[mensagem vazia]</p>
-                            )}
+                          <div className="relative max-w-[75%]">
                             <div
-                              className={`flex items-center justify-end gap-1 mt-0.5 ${
+                              className={`rounded-lg px-3 py-1.5 ${
                                 msg.direction === "outbound"
-                                  ? "text-primary-foreground/60"
-                                  : "text-muted-foreground"
+                                  ? "bg-primary text-primary-foreground rounded-br-sm"
+                                  : "bg-muted text-foreground rounded-bl-sm"
                               }`}
                             >
-                              <span className="text-[9px]">
-                                {formatMessageTime(msg.timestamp_msg)}
-                              </span>
-                              {msg.direction === "outbound" && (
-                                <MessageStatusIcon status={msg.status} />
+                              {msg.message_type !== "text" ? (
+                                <MediaContent msg={msg} onImageClick={(url) => setLightboxUrl(url)} />
+                              ) : msg.body ? (
+                                <p className="text-xs whitespace-pre-wrap break-words">
+                                  {msg.body}
+                                </p>
+                              ) : null}
+                              {msg.message_type === "text" && !msg.body && (
+                                <p className="text-[10px] italic opacity-70">[mensagem vazia]</p>
                               )}
+                              <div
+                                className={`flex items-center justify-end gap-1 mt-0.5 ${
+                                  msg.direction === "outbound"
+                                    ? "text-primary-foreground/60"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                <span className="text-[9px]">
+                                  {formatMessageTime(msg.timestamp_msg)}
+                                </span>
+                                {msg.direction === "outbound" && (
+                                  <MessageStatusIcon status={msg.status} />
+                                )}
+                              </div>
                             </div>
+                            {/* Message context menu */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  className={`absolute top-1 opacity-0 group-hover/msg:opacity-100 transition-opacity p-0.5 rounded hover:bg-foreground/10 ${
+                                    msg.direction === "outbound" ? "-left-6" : "-right-6"
+                                  }`}
+                                >
+                                  <MoreVertical className="w-3.5 h-3.5 text-muted-foreground" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent side="left" align="start" className="min-w-[120px]">
+                                {msg.direction === "outbound" && msg.message_type === "text" && (
+                                  <DropdownMenuItem onClick={() => startEditMessage(msg)} className="text-xs gap-2">
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem onClick={() => handleDeleteMessage(msg.id)} className="text-xs gap-2 text-destructive focus:text-destructive">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       ))}
