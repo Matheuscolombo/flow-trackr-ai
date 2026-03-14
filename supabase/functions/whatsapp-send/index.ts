@@ -273,7 +273,7 @@ Deno.serve(async (req) => {
         phone,
         message_id: messageId,
         direction: "outbound",
-        message_type: msgType,
+        message_type: dbMessageType,
         body: text || caption || null,
         media_url: mediaUrl || null,
         media_mime_type: null,
