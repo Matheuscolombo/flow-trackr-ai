@@ -1231,12 +1231,12 @@ const WhatsAppChatPage = () => {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent side="left" align="start" className="min-w-[120px]">
                                 {msg.direction === "outbound" && msg.message_type === "text" && (
-                                  <DropdownMenuItem onClick={() => startEditMessage(msg)} className="text-xs gap-2">
+                                  <DropdownMenuItem onSelect={() => startEditMessage(msg)} className="text-xs gap-2">
                                     <Pencil className="w-3.5 h-3.5" />
                                     Editar
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuItem onClick={() => handleDeleteMessage(msg.id)} className="text-xs gap-2 text-destructive focus:text-destructive">
+                                <DropdownMenuItem onSelect={() => handleDeleteMessage(msg.id)} className="text-xs gap-2 text-destructive focus:text-destructive">
                                   <Trash2 className="w-3.5 h-3.5" />
                                   Excluir
                                 </DropdownMenuItem>
