@@ -1021,7 +1021,7 @@ const WhatsAppChatPage = () => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (editingMessageId) {
+      if (editingMessageKey) {
         saveEditMessage();
       } else {
         handleSend();
