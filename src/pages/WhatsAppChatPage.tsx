@@ -831,8 +831,25 @@ const WhatsAppChatPage = () => {
   useEffect(() => {
     if (selectedChat) {
       loadMessages(selectedChat.phone);
+      // Enrich contact info if missing
+      if (!selectedChat.contact_name || !selectedChat.profile_pic_url) {
+        enrichContact(selectedChat).then((result) => {
+          if (result) {
+            setSelectedChat((prev) =>
+              prev && prev.phone === selectedChat.phone
+                ? {
+                    ...prev,
+                    contact_name: prev.contact_name || result.wa_name,
+                    profile_pic_url: prev.profile_pic_url || result.image_preview,
+                    lead_id: prev.lead_id || result.lead_id || null,
+                  }
+                : prev
+            );
+          }
+        });
+      }
     }
-  }, [selectedChat, loadMessages]);
+  }, [selectedChat?.phone, loadMessages, enrichContact]);
 
   // Realtime subscription
   useEffect(() => {
