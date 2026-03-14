@@ -475,6 +475,70 @@ const WhatsAppChatPage = () => {
 
   const accessToken = session?.access_token || "";
 
+  // Send presence (composing/recording) — debounced
+  const sendPresence = useCallback(async (presence: "composing" | "recording") => {
+    const now = Date.now();
+    if (now - lastPresenceSent.current < 25000) return;
+    const chat = selectedChatRef.current;
+    const instanceId = chat?.instance_id || chats.find(c => c.instance_id)?.instance_id;
+    if (!chat || !instanceId || !accessToken) return;
+    lastPresenceSent.current = now;
+    try {
+      await postApi("whatsapp-presence", accessToken, {
+        instance_id: instanceId,
+        remote_jid: chat.remote_jid,
+        presence,
+        delay: 30000,
+      });
+    } catch (e) {
+      console.error("[presence]", e);
+    }
+  }, [accessToken, chats]);
+
+  // Handle typing → send composing presence
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessageText(e.target.value);
+    if (e.target.value.trim()) sendPresence("composing");
+  };
+
+  // Delete individual message
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!confirm("Excluir esta mensagem?")) return;
+    const { error } = await supabase.from("whatsapp_messages").delete().eq("id", msgId);
+    if (error) { console.error("[deleteMsg]", error); return; }
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+  };
+
+  // Start editing message
+  const startEditMessage = (msg: Message) => {
+    setEditingMessageId(msg.id);
+    setEditingOriginalText(msg.body || "");
+    setMessageText(msg.body || "");
+  };
+
+  // Save edited message
+  const saveEditMessage = async () => {
+    if (!editingMessageId) return;
+    const newBody = messageText.trim();
+    if (!newBody) return;
+    const { error } = await supabase
+      .from("whatsapp_messages")
+      .update({ body: newBody })
+      .eq("id", editingMessageId);
+    if (error) { console.error("[editMsg]", error); return; }
+    setMessages(prev => prev.map(m => m.id === editingMessageId ? { ...m, body: newBody } : m));
+    setEditingMessageId(null);
+    setEditingOriginalText("");
+    setMessageText("");
+  };
+
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingMessageId(null);
+    setEditingOriginalText("");
+    setMessageText("");
+  };
+
   // Load chat list
   const loadChats = useCallback(async () => {
     if (!accessToken) return;
