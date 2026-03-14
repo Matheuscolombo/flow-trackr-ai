@@ -1470,6 +1470,22 @@ const WhatsAppChatPage = () => {
                 {selectedChat.contact_name && (
                   <p className="text-[10px] text-muted-foreground">{selectedChat.phone}</p>
                 )}
+                {selectedChat.instance_id && instanceMap[selectedChat.instance_id] && (
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal cursor-default">
+                            {instanceMap[selectedChat.instance_id].name}
+                          </Badge>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="text-xs">
+                        {instanceMap[selectedChat.instance_id].phone || "Sem número"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               </div>
               <Button
                 size="icon"
