@@ -726,11 +726,47 @@ const WhatsAppChatPage = () => {
     setMessageText("");
   };
 
+  // Enrich a single chat with contact info (name/photo) from UAZAPI
+  const enrichedPhonesRef = useRef<Set<string>>(new Set());
+
+  const enrichContact = useCallback(async (chat: Chat) => {
+    if (!accessToken || !chat.instance_id) return null;
+    const key = chat.phone;
+    if (enrichedPhonesRef.current.has(key)) return null;
+    enrichedPhonesRef.current.add(key);
+
+    try {
+      const data = await fetchApi(
+        `whatsapp-contact-info?instance_id=${encodeURIComponent(chat.instance_id)}&phone=${encodeURIComponent(chat.phone)}`,
+        accessToken
+      );
+      const waName = data.wa_name || null;
+      const imagePreview = data.image_preview || null;
+      if (waName || imagePreview) {
+        setChats((prev) =>
+          prev.map((c) =>
+            c.phone === key
+              ? {
+                  ...c,
+                  contact_name: c.contact_name || waName,
+                  profile_pic_url: c.profile_pic_url || imagePreview,
+                  lead_id: c.lead_id || data.lead_id || null,
+                }
+              : c
+          )
+        );
+        return { wa_name: waName, image_preview: imagePreview, lead_id: data.lead_id };
+      }
+    } catch (e) {
+      console.error("[enrichContact]", key, e);
+    }
+    return null;
+  }, [accessToken]);
+
   // Load chat list
   const loadChats = useCallback(async () => {
     if (!accessToken) return;
     try {
-      // Only show spinner on first load, not on background polls
       if (!initialChatsLoaded.current) {
         setLoadingChats(true);
       }
@@ -743,6 +779,27 @@ const WhatsAppChatPage = () => {
       setLoadingChats(false);
     }
   }, [accessToken]);
+
+  // Background enrichment: after first load, enrich chats without names
+  const backgroundEnrichDone = useRef(false);
+  useEffect(() => {
+    if (!initialChatsLoaded.current || backgroundEnrichDone.current || chats.length === 0) return;
+    backgroundEnrichDone.current = true;
+
+    const toEnrich = chats.filter((c) => !c.contact_name && c.instance_id).slice(0, 10);
+    if (toEnrich.length === 0) return;
+
+    // Enrich with concurrency limit of 3
+    let idx = 0;
+    const next = async () => {
+      while (idx < toEnrich.length) {
+        const chat = toEnrich[idx++];
+        await enrichContact(chat);
+      }
+    };
+    const concurrency = Math.min(3, toEnrich.length);
+    for (let i = 0; i < concurrency; i++) next();
+  }, [chats, enrichContact]);
 
   useEffect(() => {
     loadChats();
@@ -774,8 +831,25 @@ const WhatsAppChatPage = () => {
   useEffect(() => {
     if (selectedChat) {
       loadMessages(selectedChat.phone);
+      // Enrich contact info if missing
+      if (!selectedChat.contact_name || !selectedChat.profile_pic_url) {
+        enrichContact(selectedChat).then((result) => {
+          if (result) {
+            setSelectedChat((prev) =>
+              prev && prev.phone === selectedChat.phone
+                ? {
+                    ...prev,
+                    contact_name: prev.contact_name || result.wa_name,
+                    profile_pic_url: prev.profile_pic_url || result.image_preview,
+                    lead_id: prev.lead_id || result.lead_id || null,
+                  }
+                : prev
+            );
+          }
+        });
+      }
     }
-  }, [selectedChat, loadMessages]);
+  }, [selectedChat?.phone, loadMessages, enrichContact]);
 
   // Realtime subscription
   useEffect(() => {
