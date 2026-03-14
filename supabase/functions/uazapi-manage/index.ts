@@ -712,36 +712,43 @@ Deno.serve(async (req) => {
       let chatList: Array<{ remoteJid: string; name?: string }> = body.chat_list || [];
 
       if (chatList.length === 0) {
-        // Try multiple endpoints to get chat list
-        const chatEndpoints = [
-          { url: `${baseUrl}/chat/findChats/${encodeURIComponent(instanceName)}`, method: "GET" },
-          { url: `${baseUrl}/chat/fetchAllChats`, method: "GET" },
-          { url: `${baseUrl}/chat/findChats`, method: "GET" },
-        ];
+        // Try multiple endpoints to get chat list, with one retry
+        for (let attempt = 0; attempt < 2 && chatList.length === 0; attempt++) {
+          if (attempt > 0) {
+            console.log(`[sync_messages] retry attempt ${attempt + 1} after 2s delay`);
+            await new Promise(r => setTimeout(r, 2000));
+          }
 
-        for (const ep of chatEndpoints) {
-          try {
-            const res = await fetch(ep.url, {
-              method: ep.method,
-              headers: { "Content-Type": "application/json", token },
-            });
-            if (res.ok) {
-              const data = await res.json();
-              console.log(`[sync_messages] chats from ${ep.url}: ${Array.isArray(data) ? data.length : 'not array'}`);
-              const arr = Array.isArray(data) ? data : (data.chats || data.data || []);
-              chatList = arr
-                .filter((c: Record<string, unknown>) => {
-                  const jid = String(c.remoteJid || c.id || c.jid || "");
-                  return jid.endsWith("@s.whatsapp.net"); // only personal chats, skip groups
-                })
-                .map((c: Record<string, unknown>) => ({
-                  remoteJid: String(c.remoteJid || c.id || c.jid),
-                  name: c.name ? String(c.name) : undefined,
-                }));
-              if (chatList.length > 0) break;
+          const chatEndpoints = [
+            { url: `${baseUrl}/chat/findChats/${encodeURIComponent(instanceName)}`, method: "GET" },
+            { url: `${baseUrl}/chat/fetchAllChats`, method: "GET" },
+            { url: `${baseUrl}/chat/findChats`, method: "GET" },
+          ];
+
+          for (const ep of chatEndpoints) {
+            try {
+              const res = await fetch(ep.url, {
+                method: ep.method,
+                headers: { "Content-Type": "application/json", token },
+              });
+              if (res.ok) {
+                const data = await res.json();
+                console.log(`[sync_messages] chats from ${ep.url}: ${Array.isArray(data) ? data.length : 'not array'}`);
+                const arr = Array.isArray(data) ? data : (data.chats || data.data || []);
+                chatList = arr
+                  .filter((c: Record<string, unknown>) => {
+                    const jid = String(c.remoteJid || c.id || c.jid || "");
+                    return jid.endsWith("@s.whatsapp.net"); // only personal chats, skip groups
+                  })
+                  .map((c: Record<string, unknown>) => ({
+                    remoteJid: String(c.remoteJid || c.id || c.jid),
+                    name: c.name ? String(c.name) : undefined,
+                  }));
+                if (chatList.length > 0) break;
+              }
+            } catch (e) {
+              console.error(`[sync_messages] chat list error:`, e);
             }
-          } catch (e) {
-            console.error(`[sync_messages] chat list error:`, e);
           }
         }
 
