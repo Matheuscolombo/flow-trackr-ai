@@ -1027,7 +1027,7 @@ const WhatsAppChatPage = () => {
         handleSend();
       }
     }
-    if (e.key === "Escape" && editingMessageId) {
+    if (e.key === "Escape" && editingMessageKey) {
       cancelEdit();
     }
   };
