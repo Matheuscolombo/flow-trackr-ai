@@ -1,4 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+
+function isPhoneOnly(name: string | null): boolean {
+  if (!name) return true;
+  return /^\+?\d[\d\s()-]*$/.test(name.trim());
+}
 import {
   MessageSquare,
   Send,
@@ -748,7 +753,7 @@ const WhatsAppChatPage = () => {
             c.phone === key
               ? {
                   ...c,
-                  contact_name: c.contact_name || waName,
+                  contact_name: isPhoneOnly(c.contact_name) ? (waName || c.contact_name) : c.contact_name,
                   profile_pic_url: c.profile_pic_url || imagePreview,
                   lead_id: c.lead_id || data.lead_id || null,
                 }
@@ -832,14 +837,14 @@ const WhatsAppChatPage = () => {
     if (selectedChat) {
       loadMessages(selectedChat.phone);
       // Enrich contact info if missing
-      if (!selectedChat.contact_name || !selectedChat.profile_pic_url) {
+      if (isPhoneOnly(selectedChat.contact_name) || !selectedChat.profile_pic_url) {
         enrichContact(selectedChat).then((result) => {
           if (result) {
             setSelectedChat((prev) =>
               prev && prev.phone === selectedChat.phone
                 ? {
                     ...prev,
-                    contact_name: prev.contact_name || result.wa_name,
+                    contact_name: isPhoneOnly(prev.contact_name) ? (result.wa_name || prev.contact_name) : prev.contact_name,
                     profile_pic_url: prev.profile_pic_url || result.image_preview,
                     lead_id: prev.lead_id || result.lead_id || null,
                   }
