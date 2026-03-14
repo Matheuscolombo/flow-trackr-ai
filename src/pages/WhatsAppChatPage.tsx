@@ -477,6 +477,11 @@ const WhatsAppChatPage = () => {
     }
   }, [accessToken]);
 
+  // Keep ref in sync
+  useEffect(() => {
+    selectedChatRef.current = selectedChat;
+  }, [selectedChat]);
+
   useEffect(() => {
     if (selectedChat) {
       loadMessages(selectedChat.phone);
