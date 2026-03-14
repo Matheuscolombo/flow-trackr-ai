@@ -524,6 +524,32 @@ const WhatsAppChatPage = () => {
     if (e.target.value.trim() && !editingMessageKey) sendPresence("composing");
   };
 
+  const runRemoteMessageAction = useCallback(async (
+    params: { action: "edit_message" | "delete_message"; msg: Message; text?: string }
+  ) => {
+    if (!accessToken) throw new Error("Sessão expirada. Faça login novamente.");
+
+    const serverMessageId = params.msg.message_id && !params.msg.message_id.startsWith("temp_")
+      ? params.msg.message_id
+      : null;
+    const instanceId =
+      params.msg.instance_id ||
+      selectedChatRef.current?.instance_id ||
+      chats.find((c) => c.instance_id)?.instance_id ||
+      null;
+
+    if (!serverMessageId || !instanceId) {
+      throw new Error("Essa mensagem ainda está sincronizando. Aguarde 2s e tente novamente.");
+    }
+
+    await postApi("whatsapp-send", accessToken, {
+      action: params.action,
+      instance_id: instanceId,
+      message_id: serverMessageId,
+      text: params.text,
+    });
+  }, [accessToken, chats]);
+
   // Delete individual message
   const handleDeleteMessage = async (msg: Message) => {
     const key = msgKey(msg);
