@@ -1264,22 +1264,31 @@ const WhatsAppChatPage = () => {
                   <Paperclip className="w-4 h-4" />
                 )}
               </Button>
+              {editingMessageId && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 rounded-t border border-b-0 border-border text-xs text-muted-foreground">
+                  <Pencil className="w-3 h-3" />
+                  <span className="flex-1 truncate">Editando mensagem</span>
+                  <button onClick={cancelEdit} className="hover:text-foreground"><X className="w-3.5 h-3.5" /></button>
+                </div>
+              )}
               <Input
-                placeholder="Digite uma mensagem..."
+                placeholder={editingMessageId ? "Edite a mensagem..." : "Digite uma mensagem..."}
                 value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                className="flex-1 text-xs"
+                className={`flex-1 text-xs ${editingMessageId ? "border-primary" : ""}`}
                 disabled={sending || uploading}
               />
               <Button
                 size="icon"
-                onClick={handleSend}
+                onClick={editingMessageId ? saveEditMessage : handleSend}
                 disabled={!messageText.trim() || sending || uploading}
                 className="shrink-0"
               >
                 {sending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
+                ) : editingMessageId ? (
+                  <Check className="w-4 h-4" />
                 ) : (
                   <Send className="w-4 h-4" />
                 )}
