@@ -541,28 +541,35 @@ const WhatsAppChatPage = () => {
 
     if (!workspaceId) return;
 
-    // Try delete by id first, then fallback to message_id
+    // Try delete by id first, then fallback to message_id (only if 0 rows affected)
     let deleted = false;
     if (!msg.id.startsWith("temp_")) {
-      const { error, count } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .delete()
         .eq("workspace_id", workspaceId)
-        .eq("id", msg.id);
-      console.log("[msg-action] DELETE by id result:", { error, count });
-      if (!error) deleted = true;
+        .eq("id", msg.id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] DELETE by id result:", { error, affected });
+      if (!error && affected > 0) deleted = true;
     }
 
     if (!deleted && msg.message_id && !msg.message_id.startsWith("temp_")) {
-      const { error, count } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .delete()
         .eq("workspace_id", workspaceId)
-        .eq("message_id", msg.message_id);
-      console.log("[msg-action] DELETE by message_id result:", { error, count });
-      if (error) {
-        console.error("[deleteMsg] fallback failed:", error);
-        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        .eq("message_id", msg.message_id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] DELETE by message_id result:", { error, affected });
+      if (error || affected === 0) {
+        console.error("[deleteMsg] delete failed after fallback:", error || "0 rows");
+        if (selectedChatRef.current) await loadMessages(selectedChatRef.current.phone);
+        alert("Não consegui excluir essa mensagem. Tente novamente.");
         return;
       }
     }
@@ -599,29 +606,38 @@ const WhatsAppChatPage = () => {
 
     console.log("[msg-action] EDIT save key:", editingMessageKey, "id:", editingMessage.id, "message_id:", editingMessage.message_id);
 
-    // Try update by id first
+    // Try update by id first (must affect at least 1 row)
     let updated = false;
     if (!editingMessage.id.startsWith("temp_")) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .update({ body: newBody })
         .eq("workspace_id", workspaceId)
-        .eq("id", editingMessage.id);
-      if (!error) updated = true;
-      else console.warn("[editMsg] update by id failed:", error);
+        .eq("id", editingMessage.id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] EDIT by id result:", { error, affected });
+      if (!error && affected > 0) updated = true;
+      else if (error) console.warn("[editMsg] update by id failed:", error);
     }
 
-    // Fallback: update by message_id
+    // Fallback: update by message_id (must affect at least 1 row)
     if (!updated && editingMessage.message_id && !editingMessage.message_id.startsWith("temp_")) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .update({ body: newBody })
         .eq("workspace_id", workspaceId)
-        .eq("message_id", editingMessage.message_id);
-      if (error) {
-        console.error("[editMsg] fallback failed:", error);
-        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        .eq("message_id", editingMessage.message_id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] EDIT by message_id result:", { error, affected });
+      if (error || affected === 0) {
+        console.error("[editMsg] update failed after fallback:", error || "0 rows");
+        if (selectedChatRef.current) await loadMessages(selectedChatRef.current.phone);
         cancelEdit();
+        alert("Não consegui editar essa mensagem. Tente novamente.");
         return;
       }
     }
