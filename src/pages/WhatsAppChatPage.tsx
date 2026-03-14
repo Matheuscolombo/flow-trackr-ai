@@ -474,6 +474,7 @@ const WhatsAppChatPage = () => {
   const selectedChatRef = useRef<Chat | null>(null);
   const [deletingChat, setDeletingChat] = useState<string | null>(null);
   const [editingMessageKey, setEditingMessageKey] = useState<string | null>(null);
+  const [instanceMap, setInstanceMap] = useState<Record<string, { name: string; phone: string }>>({});
   const [editingOriginalText, setEditingOriginalText] = useState("");
   const lastPresenceSent = useRef(0);
 
