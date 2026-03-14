@@ -555,6 +555,14 @@ const WhatsAppChatPage = () => {
     const key = msgKey(msg);
     console.log("[msg-action] DELETE key:", key, "id:", msg.id, "message_id:", msg.message_id);
 
+    try {
+      await runRemoteMessageAction({ action: "delete_message", msg });
+    } catch (err) {
+      console.error("[deleteMsg] remote delete failed:", err);
+      alert(err instanceof Error ? err.message : "Não consegui apagar a mensagem no WhatsApp.");
+      return;
+    }
+
     // Optimistic remove by canonical key
     setMessages((prev) => dedupeMessages(prev.filter((m) => msgKey(m) !== key)));
 
