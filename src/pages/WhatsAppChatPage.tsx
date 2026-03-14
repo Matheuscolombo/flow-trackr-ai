@@ -441,9 +441,13 @@ const WhatsAppChatPage = () => {
   const loadChats = useCallback(async () => {
     if (!accessToken) return;
     try {
-      setLoadingChats(true);
+      // Only show spinner on first load, not on background polls
+      if (!initialChatsLoaded.current) {
+        setLoadingChats(true);
+      }
       const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
       setChats(data.chats || []);
+      initialChatsLoaded.current = true;
     } catch (e) {
       console.error("[loadChats] error:", e);
     } finally {
