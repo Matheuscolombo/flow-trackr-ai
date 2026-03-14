@@ -829,6 +829,23 @@ const WhatsAppChatPage = () => {
     loadChats();
   }, [loadChats]);
 
+  // Load instance map for badge display
+  useEffect(() => {
+    if (!workspaceId) return;
+    supabase
+      .from("whatsapp_instances")
+      .select("id, instance_display_name, phone")
+      .eq("workspace_id", workspaceId)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, { name: string; phone: string }> = {};
+        for (const inst of data) {
+          map[inst.id] = { name: inst.instance_display_name, phone: inst.phone || "" };
+        }
+        setInstanceMap(map);
+      });
+  }, [workspaceId]);
+
   // Load messages for selected chat
   const loadMessages = useCallback(async (phone: string) => {
     if (!accessToken) return;
