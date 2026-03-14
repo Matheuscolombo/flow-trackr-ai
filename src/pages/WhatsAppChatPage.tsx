@@ -733,6 +733,7 @@ const WhatsAppChatPage = () => {
 
   // Enrich a single chat with contact info (name/photo) from UAZAPI
   const enrichedPhonesRef = useRef<Set<string>>(new Set());
+  const enrichedCacheRef = useRef<Record<string, { name?: string; photo?: string }>>({});
 
   const enrichContact = useCallback(async (chat: Chat) => {
     if (!accessToken || !chat.instance_id) return null;
@@ -748,6 +749,11 @@ const WhatsAppChatPage = () => {
       const waName = data.wa_name || null;
       const imagePreview = data.image_preview || null;
       if (waName || imagePreview) {
+        // Cache enriched data so polling doesn't overwrite it
+        enrichedCacheRef.current[key] = {
+          ...(waName ? { name: waName } : {}),
+          ...(imagePreview ? { photo: imagePreview } : {}),
+        };
         setChats((prev) =>
           prev.map((c) =>
             c.phone === key
@@ -776,7 +782,18 @@ const WhatsAppChatPage = () => {
         setLoadingChats(true);
       }
       const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
-      setChats(data.chats || []);
+      const serverChats: Chat[] = data.chats || [];
+      // Merge enriched cache over server data so polling doesn't overwrite names/photos
+      const merged = serverChats.map((c) => {
+        const cached = enrichedCacheRef.current[c.phone];
+        if (!cached) return c;
+        return {
+          ...c,
+          contact_name: isPhoneOnly(c.contact_name) && cached.name ? cached.name : c.contact_name,
+          profile_pic_url: c.profile_pic_url || cached.photo || null,
+        };
+      });
+      setChats(merged);
       initialChatsLoaded.current = true;
     } catch (e) {
       console.error("[loadChats] error:", e);
