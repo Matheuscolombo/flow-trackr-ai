@@ -648,7 +648,7 @@ const WhatsAppChatPage = () => {
 
   // Cancel editing
   const cancelEdit = () => {
-    setEditingMessageId(null);
+    setEditingMessageKey(null);
     setEditingOriginalText("");
     setMessageText("");
   };
