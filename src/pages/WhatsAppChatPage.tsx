@@ -725,10 +725,12 @@ const WhatsAppChatPage = () => {
           // Handle UPDATE events (status/body edits)
           if (eventType === "UPDATE") {
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === newMsg.id || m.message_id === newMsg.message_id
-                  ? { ...m, ...newMsg }
-                  : m
+              dedupeMessages(
+                prev.map((m) =>
+                  m.id === newMsg.id || m.message_id === newMsg.message_id
+                    ? { ...m, ...newMsg }
+                    : m
+                )
               )
             );
             return;
