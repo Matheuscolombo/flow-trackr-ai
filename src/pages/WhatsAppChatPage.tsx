@@ -1418,7 +1418,7 @@ const WhatsAppChatPage = () => {
                 />
                 <Button
                   size="icon"
-                  onClick={editingMessageId ? saveEditMessage : handleSend}
+                  onClick={editingMessageKey ? saveEditMessage : handleSend}
                   disabled={!messageText.trim() || sending || uploading}
                   className="shrink-0"
                 >
