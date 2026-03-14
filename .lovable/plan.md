@@ -1,43 +1,29 @@
 
 
-## Problema: CSV com schema duplo
+## Fase 2 Parcial — Correcao do Bug de Audio + PTT
 
-O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
-- Linha 1: header com 23 colunas (inclui "Nome")
-- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
+### Problemas Identificados
 
-Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
+**1. Mensagem duplicada (o "bug" do chat)**
+Quando o frontend envia um arquivo, ele cria uma mensagem otimista com `message_id: tempId`. A edge function insere no banco (disparando realtime INSERT) ANTES de retornar a resposta ao frontend. O realtime chega e o frontend nao encontra o `message_id` real na lista (ainda tem o tempId), entao adiciona duplicata.
 
-## Solução: Tornar o parser de CSV resiliente a schemas duplos
+**2. Audio .ogg nao vai como "gravado"**
+O `detectMediaType` retorna `"audio"` mas a UAZAPI precisa receber `type: "ptt"` para que apareca como mensagem de voz no WhatsApp. Arquivos .ogg devem usar tipo `ptt`.
 
-### Alterações em `supabase/functions/import-leads/index.ts`
+---
 
-1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
+### Correcoes
 
-2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
+**Frontend (`WhatsAppChatPage.tsx`)**:
+1. `detectMediaType`: retornar `"ptt"` para arquivos `.ogg` e `audio/ogg`
+2. Realtime INSERT handler: alem de checar `message_id`, tambem ignorar se existe mensagem `pending` do mesmo phone com timestamp proximo (< 10s) — isso evita duplicata durante a race condition
+3. Na resposta do `postApi` para arquivo, marcar a mensagem otimista com flag para que o realtime a reconheca
 
-3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
+**Backend (`whatsapp-send/index.ts`)**:
+1. Quando `mediaType === "audio"` e o arquivo e `.ogg`, usar `type: "ptt"` nos payloads da UAZAPI
+2. Salvar `message_type: "audio"` no banco (para o player funcionar), mas enviar `ptt` para a API
 
-### Detalhes técnicos
-
-No `parseCSV`, adicionar detecção de header duplicado:
-```
-// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
-const matchCount = values.filter(v => headers.includes(v.trim())).length;
-if (matchCount > headers.length * 0.5) continue;
-```
-
-Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
-```
-// Se email não tem @ mas parece telefone, e nome parece email → trocar
-if (!email.includes("@") && /^\d+$/.test(email)) {
-  const nameVal = getFieldValue(row, "nome", ...);
-  if (nameVal.includes("@")) {
-    phone = normPhone(email);
-    email = normEmail(nameVal);
-  }
-}
-```
-
-Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
+### Arquivos modificados
+- `src/pages/WhatsAppChatPage.tsx` — fix duplicata + detectMediaType ptt
+- `supabase/functions/whatsapp-send/index.ts` — enviar como ptt quando audio ogg
 
