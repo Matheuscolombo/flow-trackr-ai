@@ -1392,7 +1392,7 @@ const WhatsAppChatPage = () => {
                   accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
                   onChange={handleFileSelect}
                 />
-                {!editingMessageId && (
+                {!editingMessageKey && (
                   <Button
                     size="icon"
                     variant="ghost"
