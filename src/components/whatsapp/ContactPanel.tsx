@@ -405,8 +405,7 @@ export function ContactPanel({
                       {funnelPositions.map((fp) => (
                         <div
                           key={fp.id}
-                          className="bg-muted rounded-md px-2.5 py-1.5 flex items-center justify-between"
-                        >
+                          className="bg-muted rounded-md px-2.5 py-1.5 flex items-center justify-between overflow-hidden"
                           <div className="min-w-0">
                             <p className="text-[11px] font-medium text-foreground truncate">
                               {fp.funnel_name}
