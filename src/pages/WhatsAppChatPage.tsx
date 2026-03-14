@@ -495,10 +495,10 @@ const WhatsAppChatPage = () => {
     }
   }, [accessToken, chats]);
 
-  // Handle typing → send composing presence
+  // Handle typing → send composing presence (skip when editing)
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessageText(e.target.value);
-    if (e.target.value.trim()) sendPresence("composing");
+    if (e.target.value.trim() && !editingMessageId) sendPresence("composing");
   };
 
   // Delete individual message
