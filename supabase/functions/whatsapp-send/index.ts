@@ -224,27 +224,66 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { instance_id, remote_jid, text, mediaUrl, mediaType, mediaMimeType, caption, fileName } = body as {
+    const {
+      action = "send",
+      instance_id,
+      remote_jid,
+      text,
+      mediaUrl,
+      mediaType,
+      mediaMimeType,
+      caption,
+      fileName,
+      message_id,
+    } = body as {
+      action?: "send" | "edit_message" | "delete_message";
       instance_id: string;
-      remote_jid: string;
+      remote_jid?: string;
       text?: string;
       mediaUrl?: string;
       mediaType?: string;
       mediaMimeType?: string;
       caption?: string;
       fileName?: string;
+      message_id?: string;
     };
 
-    if (!instance_id || !remote_jid) {
-      return new Response(JSON.stringify({ error: "Missing instance_id or remote_jid" }), {
+    if (!instance_id) {
+      return new Response(JSON.stringify({ error: "Missing instance_id" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Must have either text or mediaUrl
-    if (!text && !mediaUrl) {
-      return new Response(JSON.stringify({ error: "Missing text or mediaUrl" }), {
+    if (action === "send") {
+      if (!remote_jid) {
+        return new Response(JSON.stringify({ error: "Missing remote_jid" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!text && !mediaUrl) {
+        return new Response(JSON.stringify({ error: "Missing text or mediaUrl" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (action === "edit_message") {
+      if (!message_id || !text?.trim()) {
+        return new Response(JSON.stringify({ error: "Missing message_id or text" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (action === "delete_message") {
+      if (!message_id) {
+        return new Response(JSON.stringify({ error: "Missing message_id" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      return new Response(JSON.stringify({ error: "Invalid action" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
