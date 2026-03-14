@@ -1,4 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+
+function isPhoneOnly(name: string | null): boolean {
+  if (!name) return true;
+  return /^\+?\d[\d\s()-]*$/.test(name.trim());
+}
 import {
   MessageSquare,
   Send,
