@@ -432,6 +432,8 @@ const WhatsAppChatPage = () => {
   const [showContactPanel, setShowContactPanel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialChatsLoaded = useRef(false);
+  const selectedChatRef = useRef<Chat | null>(null);
 
   const accessToken = session?.access_token || "";
 
