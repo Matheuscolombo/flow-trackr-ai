@@ -106,6 +106,29 @@ function mediaTypeLabel(type: string): string {
   return labels[type] || `[${type}]`;
 }
 
+/** Canonical identity key for a message — prefer message_id (when real), fallback to id */
+function msgKey(msg: Message): string {
+  // Temp messages have message_id === id (both start with "temp_"), use id
+  if (msg.message_id && !msg.message_id.startsWith("temp_")) return msg.message_id;
+  return msg.id;
+}
+
+/** Deduplicate messages by canonical key, keeping the latest version, sorted by timestamp */
+function dedupeMessages(msgs: Message[]): Message[] {
+  const map = new Map<string, Message>();
+  for (const m of msgs) {
+    const key = msgKey(m);
+    const existing = map.get(key);
+    // Prefer non-temp versions (real DB rows) over optimistic ones
+    if (!existing || existing.id.startsWith("temp_")) {
+      map.set(key, m);
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.timestamp_msg).getTime() - new Date(b.timestamp_msg).getTime()
+  );
+}
+
 function detectMediaType(file: File): string {
   if (file.type.startsWith("image/")) return "image";
   if (file.type.startsWith("video/")) return "video";
