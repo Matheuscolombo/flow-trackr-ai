@@ -558,7 +558,26 @@ const WhatsAppChatPage = () => {
           setSelectedChat((current) => {
             if (current && current.phone === newMsg.phone) {
               setMessages((prev) => {
+                // Exact message_id match — skip duplicate
                 if (prev.some((m) => m.message_id === newMsg.message_id)) return prev;
+                // Dedup: if there's a pending outbound msg for same phone within 10s, replace it
+                if (newMsg.direction === "outbound") {
+                  const newTs = new Date(newMsg.timestamp_msg).getTime();
+                  const pendingIdx = prev.findIndex(
+                    (m) =>
+                      m.status === "pending" &&
+                      m.direction === "outbound" &&
+                      m.message_id.startsWith("temp_") &&
+                      m.phone === newMsg.phone &&
+                      Math.abs(new Date(m.timestamp_msg).getTime() - newTs) < 10000
+                  );
+                  if (pendingIdx !== -1) {
+                    // Replace the optimistic message with the real one
+                    const updated = [...prev];
+                    updated[pendingIdx] = newMsg;
+                    return updated;
+                  }
+                }
                 const updated = [...prev, newMsg];
                 // Only auto-scroll if user is near the bottom
                 setTimeout(() => {

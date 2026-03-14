@@ -237,10 +237,16 @@ Deno.serve(async (req) => {
     const isMedia = !!mediaUrl;
     const msgType = isMedia ? (mediaType || "document") : "text";
 
-    console.log(`[whatsapp-send] Sending ${msgType} to ${number} via ${inst.instance_name} at ${baseUrl}`);
+    // For .ogg audio, send as PTT (voice note) to UAZAPI but store as "audio" in DB
+    const isOggAudio = isMedia && (mediaType === "audio" || mediaType === "ptt") &&
+      (mediaUrl!.endsWith(".ogg") || mediaUrl!.includes(".ogg?"));
+    const apiSendType = isOggAudio ? "ptt" : msgType;
+    const dbMessageType = (msgType === "ptt") ? "audio" : msgType;
+
+    console.log(`[whatsapp-send] Sending ${apiSendType} (db:${dbMessageType}) to ${number} via ${inst.instance_name} at ${baseUrl}`);
 
     const attempts = isMedia
-      ? buildMediaAttempts(baseUrl, token, number, mediaUrl!, msgType, caption, fileName)
+      ? buildMediaAttempts(baseUrl, token, number, mediaUrl!, apiSendType, caption, fileName)
       : buildTextAttempts(baseUrl, token, number, text!);
 
     const result = await tryAttempts(attempts);
