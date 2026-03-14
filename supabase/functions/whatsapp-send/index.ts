@@ -313,7 +313,7 @@ Deno.serve(async (req) => {
       .from("workspaces")
       .select("id")
       .eq("id", inst.workspace_id)
-      .eq("owner_id", user.id)
+      .eq("owner_id", userId)
       .maybeSingle();
 
     if (!ws) {
