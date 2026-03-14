@@ -563,8 +563,16 @@ const WhatsAppChatPage = () => {
       return;
     }
 
-    // Optimistic remove by canonical key
-    setMessages((prev) => dedupeMessages(prev.filter((m) => msgKey(m) !== key)));
+    // Optimistic update: mark as deleted in UI
+    setMessages((prev) =>
+      dedupeMessages(
+        prev.map((m) =>
+          msgKey(m) === key
+            ? { ...m, body: "🚫 Mensagem apagada", message_type: "text", media_url: null }
+            : m
+        )
+      )
+    );
 
     // If user is editing this same message, reset edit mode
     if (editingMessageKey === key) {
@@ -575,40 +583,47 @@ const WhatsAppChatPage = () => {
 
     if (!workspaceId) return;
 
-    // Try delete by id first, then fallback to message_id (only if 0 rows affected)
-    let deleted = false;
+    // Mark as deleted in DB (update instead of delete)
+    const updatePayload = {
+      body: "🚫 Mensagem apagada",
+      message_type: "text",
+      media_url: null,
+      media_mime_type: null,
+    };
+
+    let updated = false;
     if (!msg.id.startsWith("temp_")) {
       const { data, error } = await supabase
         .from("whatsapp_messages")
-        .delete()
+        .update(updatePayload)
         .eq("workspace_id", workspaceId)
         .eq("id", msg.id)
         .select("id")
         .limit(1);
       const affected = data?.length ?? 0;
-      console.log("[msg-action] DELETE by id result:", { error, affected });
-      if (!error && affected > 0) deleted = true;
+      console.log("[msg-action] SOFT-DELETE by id result:", { error, affected });
+      if (!error && affected > 0) updated = true;
     }
 
-    if (!deleted && msg.message_id && !msg.message_id.startsWith("temp_")) {
+    if (!updated && msg.message_id && !msg.message_id.startsWith("temp_")) {
       const { data, error } = await supabase
         .from("whatsapp_messages")
-        .delete()
+        .update(updatePayload)
         .eq("workspace_id", workspaceId)
         .eq("message_id", msg.message_id)
         .select("id")
         .limit(1);
       const affected = data?.length ?? 0;
-      console.log("[msg-action] DELETE by message_id result:", { error, affected });
+      console.log("[msg-action] SOFT-DELETE by message_id result:", { error, affected });
       if (error || affected === 0) {
-        console.error("[deleteMsg] delete failed after fallback:", error || "0 rows");
+        console.error("[deleteMsg] soft-delete failed after fallback:", error || "0 rows");
         if (selectedChatRef.current) await loadMessages(selectedChatRef.current.phone);
-        alert("Não consegui excluir essa mensagem. Tente novamente.");
+        alert("Não consegui marcar essa mensagem como apagada. Tente novamente.");
         return;
       }
     }
 
-    // Keep chat preview/count in sync after delete
+    // Keep chat preview/count in sync
     await loadChats();
     if (selectedChatRef.current?.phone === msg.phone) {
       await loadMessages(msg.phone);
