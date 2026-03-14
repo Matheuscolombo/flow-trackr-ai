@@ -1395,6 +1395,22 @@ const WhatsAppChatPage = () => {
                     {chat.contact_name && (
                       <p className="text-[10px] text-muted-foreground truncate">{chat.phone}</p>
                     )}
+                    {chat.instance_id && instanceMap[chat.instance_id] && (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-normal mt-0.5 cursor-default">
+                                {instanceMap[chat.instance_id].name}
+                              </Badge>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="text-xs">
+                            {instanceMap[chat.instance_id].phone || "Sem número"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                     <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                       {chat.last_direction === "outbound" && (
                         <span className="text-primary/60">Você: </span>
