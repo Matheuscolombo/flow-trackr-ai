@@ -1,1 +1,34 @@
 project_id = "cpfpxwusfstcahfnollm"
+
+[functions.whatsapp-chats]
+verify_jwt = false
+
+[functions.whatsapp-send]
+verify_jwt = false
+
+[functions.whatsapp-presence]
+verify_jwt = false
+
+[functions.whatsapp-contact-info]
+verify_jwt = false
+
+[functions.import-leads]
+verify_jwt = false
+
+[functions.import-sales]
+verify_jwt = false
+
+[functions.uazapi-manage]
+verify_jwt = false
+
+[functions.uazapi-webhook]
+verify_jwt = false
+
+[functions.webhook-lead]
+verify_jwt = false
+
+[functions.clear-funnel-leads]
+verify_jwt = false
+
+[functions.backfill-media]
+verify_jwt = false
