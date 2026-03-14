@@ -24,7 +24,15 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Trash2,
+  MoreVertical,
+  Pencil,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -436,6 +444,9 @@ const WhatsAppChatPage = () => {
   const initialChatsLoaded = useRef(false);
   const selectedChatRef = useRef<Chat | null>(null);
   const [deletingChat, setDeletingChat] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingOriginalText, setEditingOriginalText] = useState("");
+  const lastPresenceSent = useRef(0);
 
   // Delete all messages for a chat (phone)
   const handleDeleteChat = async (phone: string, e: React.MouseEvent) => {
@@ -463,6 +474,70 @@ const WhatsAppChatPage = () => {
   };
 
   const accessToken = session?.access_token || "";
+
+  // Send presence (composing/recording) — debounced
+  const sendPresence = useCallback(async (presence: "composing" | "recording") => {
+    const now = Date.now();
+    if (now - lastPresenceSent.current < 25000) return;
+    const chat = selectedChatRef.current;
+    const instanceId = chat?.instance_id || chats.find(c => c.instance_id)?.instance_id;
+    if (!chat || !instanceId || !accessToken) return;
+    lastPresenceSent.current = now;
+    try {
+      await postApi("whatsapp-presence", accessToken, {
+        instance_id: instanceId,
+        remote_jid: chat.remote_jid,
+        presence,
+        delay: 30000,
+      });
+    } catch (e) {
+      console.error("[presence]", e);
+    }
+  }, [accessToken, chats]);
+
+  // Handle typing → send composing presence
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessageText(e.target.value);
+    if (e.target.value.trim()) sendPresence("composing");
+  };
+
+  // Delete individual message
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!confirm("Excluir esta mensagem?")) return;
+    const { error } = await supabase.from("whatsapp_messages").delete().eq("id", msgId);
+    if (error) { console.error("[deleteMsg]", error); return; }
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+  };
+
+  // Start editing message
+  const startEditMessage = (msg: Message) => {
+    setEditingMessageId(msg.id);
+    setEditingOriginalText(msg.body || "");
+    setMessageText(msg.body || "");
+  };
+
+  // Save edited message
+  const saveEditMessage = async () => {
+    if (!editingMessageId) return;
+    const newBody = messageText.trim();
+    if (!newBody) return;
+    const { error } = await supabase
+      .from("whatsapp_messages")
+      .update({ body: newBody })
+      .eq("id", editingMessageId);
+    if (error) { console.error("[editMsg]", error); return; }
+    setMessages(prev => prev.map(m => m.id === editingMessageId ? { ...m, body: newBody } : m));
+    setEditingMessageId(null);
+    setEditingOriginalText("");
+    setMessageText("");
+  };
+
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingMessageId(null);
+    setEditingOriginalText("");
+    setMessageText("");
+  };
 
   // Load chat list
   const loadChats = useCallback(async () => {
@@ -732,6 +807,13 @@ const WhatsAppChatPage = () => {
     const lowerName = (file.name || "").toLowerCase();
     const isVoiceNoteOgg = lowerMime.includes("audio/ogg") || lowerName.endsWith(".ogg");
     const sendMediaType = isVoiceNoteOgg ? "ptt" : mediaType;
+
+    // Send "recording" presence for audio files
+    if (mediaType === "audio") {
+      lastPresenceSent.current = 0; // Force send
+      sendPresence("recording");
+    }
+
     const localPreviewUrl = URL.createObjectURL(file);
 
     const optimisticMsg: Message = {
@@ -812,7 +894,14 @@ const WhatsAppChatPage = () => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (editingMessageId) {
+        saveEditMessage();
+      } else {
+        handleSend();
+      }
+    }
+    if (e.key === "Escape" && editingMessageId) {
+      cancelEdit();
     }
   };
 
@@ -1088,42 +1177,67 @@ const WhatsAppChatPage = () => {
                       {group.messages.map((msg) => (
                         <div
                           key={msg.id}
-                          className={`flex mb-1 ${
+                          className={`flex mb-1 group/msg ${
                             msg.direction === "outbound" ? "justify-end" : "justify-start"
                           }`}
                         >
-                          <div
-                            className={`max-w-[75%] rounded-lg px-3 py-1.5 ${
-                              msg.direction === "outbound"
-                                ? "bg-primary text-primary-foreground rounded-br-sm"
-                                : "bg-muted text-foreground rounded-bl-sm"
-                            }`}
-                          >
-                            {msg.message_type !== "text" ? (
-                              <MediaContent msg={msg} onImageClick={(url) => setLightboxUrl(url)} />
-                            ) : msg.body ? (
-                              <p className="text-xs whitespace-pre-wrap break-words">
-                                {msg.body}
-                              </p>
-                            ) : null}
-                            {/* For text-only messages with no body */}
-                            {msg.message_type === "text" && !msg.body && (
-                              <p className="text-[10px] italic opacity-70">[mensagem vazia]</p>
-                            )}
+                          <div className="relative max-w-[75%]">
                             <div
-                              className={`flex items-center justify-end gap-1 mt-0.5 ${
+                              className={`rounded-lg px-3 py-1.5 ${
                                 msg.direction === "outbound"
-                                  ? "text-primary-foreground/60"
-                                  : "text-muted-foreground"
+                                  ? "bg-primary text-primary-foreground rounded-br-sm"
+                                  : "bg-muted text-foreground rounded-bl-sm"
                               }`}
                             >
-                              <span className="text-[9px]">
-                                {formatMessageTime(msg.timestamp_msg)}
-                              </span>
-                              {msg.direction === "outbound" && (
-                                <MessageStatusIcon status={msg.status} />
+                              {msg.message_type !== "text" ? (
+                                <MediaContent msg={msg} onImageClick={(url) => setLightboxUrl(url)} />
+                              ) : msg.body ? (
+                                <p className="text-xs whitespace-pre-wrap break-words">
+                                  {msg.body}
+                                </p>
+                              ) : null}
+                              {msg.message_type === "text" && !msg.body && (
+                                <p className="text-[10px] italic opacity-70">[mensagem vazia]</p>
                               )}
+                              <div
+                                className={`flex items-center justify-end gap-1 mt-0.5 ${
+                                  msg.direction === "outbound"
+                                    ? "text-primary-foreground/60"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                <span className="text-[9px]">
+                                  {formatMessageTime(msg.timestamp_msg)}
+                                </span>
+                                {msg.direction === "outbound" && (
+                                  <MessageStatusIcon status={msg.status} />
+                                )}
+                              </div>
                             </div>
+                            {/* Message context menu */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  className={`absolute top-1 opacity-0 group-hover/msg:opacity-100 transition-opacity p-0.5 rounded hover:bg-foreground/10 ${
+                                    msg.direction === "outbound" ? "-left-6" : "-right-6"
+                                  }`}
+                                >
+                                  <MoreVertical className="w-3.5 h-3.5 text-muted-foreground" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent side="left" align="start" className="min-w-[120px]">
+                                {msg.direction === "outbound" && msg.message_type === "text" && (
+                                  <DropdownMenuItem onClick={() => startEditMessage(msg)} className="text-xs gap-2">
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    Editar
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem onClick={() => handleDeleteMessage(msg.id)} className="text-xs gap-2 text-destructive focus:text-destructive">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Excluir
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       ))}
@@ -1157,22 +1271,31 @@ const WhatsAppChatPage = () => {
                   <Paperclip className="w-4 h-4" />
                 )}
               </Button>
+              {editingMessageId && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 rounded-t border border-b-0 border-border text-xs text-muted-foreground">
+                  <Pencil className="w-3 h-3" />
+                  <span className="flex-1 truncate">Editando mensagem</span>
+                  <button onClick={cancelEdit} className="hover:text-foreground"><X className="w-3.5 h-3.5" /></button>
+                </div>
+              )}
               <Input
-                placeholder="Digite uma mensagem..."
+                placeholder={editingMessageId ? "Edite a mensagem..." : "Digite uma mensagem..."}
                 value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                className="flex-1 text-xs"
+                className={`flex-1 text-xs ${editingMessageId ? "border-primary" : ""}`}
                 disabled={sending || uploading}
               />
               <Button
                 size="icon"
-                onClick={handleSend}
+                onClick={editingMessageId ? saveEditMessage : handleSend}
                 disabled={!messageText.trim() || sending || uploading}
                 className="shrink-0"
               >
                 {sending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
+                ) : editingMessageId ? (
+                  <Check className="w-4 h-4" />
                 ) : (
                   <Send className="w-4 h-4" />
                 )}
