@@ -524,10 +524,44 @@ const WhatsAppChatPage = () => {
     if (e.target.value.trim() && !editingMessageKey) sendPresence("composing");
   };
 
+  const runRemoteMessageAction = useCallback(async (
+    params: { action: "edit_message" | "delete_message"; msg: Message; text?: string }
+  ) => {
+    if (!accessToken) throw new Error("Sessão expirada. Faça login novamente.");
+
+    const serverMessageId = params.msg.message_id && !params.msg.message_id.startsWith("temp_")
+      ? params.msg.message_id
+      : null;
+    const instanceId =
+      params.msg.instance_id ||
+      selectedChatRef.current?.instance_id ||
+      chats.find((c) => c.instance_id)?.instance_id ||
+      null;
+
+    if (!serverMessageId || !instanceId) {
+      throw new Error("Essa mensagem ainda está sincronizando. Aguarde 2s e tente novamente.");
+    }
+
+    await postApi("whatsapp-send", accessToken, {
+      action: params.action,
+      instance_id: instanceId,
+      message_id: serverMessageId,
+      text: params.text,
+    });
+  }, [accessToken, chats]);
+
   // Delete individual message
   const handleDeleteMessage = async (msg: Message) => {
     const key = msgKey(msg);
     console.log("[msg-action] DELETE key:", key, "id:", msg.id, "message_id:", msg.message_id);
+
+    try {
+      await runRemoteMessageAction({ action: "delete_message", msg });
+    } catch (err) {
+      console.error("[deleteMsg] remote delete failed:", err);
+      alert(err instanceof Error ? err.message : "Não consegui apagar a mensagem no WhatsApp.");
+      return;
+    }
 
     // Optimistic remove by canonical key
     setMessages((prev) => dedupeMessages(prev.filter((m) => msgKey(m) !== key)));
@@ -605,6 +639,14 @@ const WhatsAppChatPage = () => {
     }
 
     console.log("[msg-action] EDIT save key:", editingMessageKey, "id:", editingMessage.id, "message_id:", editingMessage.message_id);
+
+    try {
+      await runRemoteMessageAction({ action: "edit_message", msg: editingMessage, text: newBody });
+    } catch (err) {
+      console.error("[editMsg] remote edit failed:", err);
+      alert(err instanceof Error ? err.message : "Não consegui editar a mensagem no WhatsApp.");
+      return;
+    }
 
     // Try update by id first (must affect at least 1 row)
     let updated = false;

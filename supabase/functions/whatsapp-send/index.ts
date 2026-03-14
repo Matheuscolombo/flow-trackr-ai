@@ -108,6 +108,61 @@ function buildMediaAttempts(
   ];
 }
 
+function buildMessageActionAttempts(params: {
+  baseUrl: string;
+  token: string;
+  apiKey?: string | null;
+  action: "edit_message" | "delete_message";
+  messageId: string;
+  text?: string;
+}): SendAttempt[] {
+  const { baseUrl, token, apiKey, action, messageId, text } = params;
+  const path = action === "edit_message" ? "/message/edit" : "/message/delete";
+  const body = action === "edit_message"
+    ? { id: messageId, text: text || "" }
+    : { id: messageId };
+
+  const attempts: SendAttempt[] = [
+    {
+      label: `${path} + token header`,
+      url: `${baseUrl}${path}`,
+      headers: { "Content-Type": "application/json", token },
+      body,
+    },
+    {
+      label: `${path} + apikey header`,
+      url: `${baseUrl}${path}`,
+      headers: { "Content-Type": "application/json", apikey: token },
+      body,
+    },
+    {
+      label: `/api${path} + token header`,
+      url: `${baseUrl}/api${path}`,
+      headers: { "Content-Type": "application/json", token },
+      body,
+    },
+  ];
+
+  if (apiKey) {
+    attempts.push(
+      {
+        label: `${path} + token + admintoken`,
+        url: `${baseUrl}${path}`,
+        headers: { "Content-Type": "application/json", token, admintoken: apiKey },
+        body,
+      },
+      {
+        label: `${path} + bearer + apikey`,
+        url: `${baseUrl}${path}`,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: apiKey },
+        body,
+      }
+    );
+  }
+
+  return attempts;
+}
+
 async function tryAttempts(attempts: SendAttempt[]) {
   const attemptResults: Array<{ label: string; status: number; snippet: string }> = [];
 
@@ -169,27 +224,66 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { instance_id, remote_jid, text, mediaUrl, mediaType, mediaMimeType, caption, fileName } = body as {
+    const {
+      action = "send",
+      instance_id,
+      remote_jid,
+      text,
+      mediaUrl,
+      mediaType,
+      mediaMimeType,
+      caption,
+      fileName,
+      message_id,
+    } = body as {
+      action?: "send" | "edit_message" | "delete_message";
       instance_id: string;
-      remote_jid: string;
+      remote_jid?: string;
       text?: string;
       mediaUrl?: string;
       mediaType?: string;
       mediaMimeType?: string;
       caption?: string;
       fileName?: string;
+      message_id?: string;
     };
 
-    if (!instance_id || !remote_jid) {
-      return new Response(JSON.stringify({ error: "Missing instance_id or remote_jid" }), {
+    if (!instance_id) {
+      return new Response(JSON.stringify({ error: "Missing instance_id" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Must have either text or mediaUrl
-    if (!text && !mediaUrl) {
-      return new Response(JSON.stringify({ error: "Missing text or mediaUrl" }), {
+    if (action === "send") {
+      if (!remote_jid) {
+        return new Response(JSON.stringify({ error: "Missing remote_jid" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!text && !mediaUrl) {
+        return new Response(JSON.stringify({ error: "Missing text or mediaUrl" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (action === "edit_message") {
+      if (!message_id || !text?.trim()) {
+        return new Response(JSON.stringify({ error: "Missing message_id or text" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (action === "delete_message") {
+      if (!message_id) {
+        return new Response(JSON.stringify({ error: "Missing message_id" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      return new Response(JSON.stringify({ error: "Invalid action" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -234,7 +328,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    const number = cleanNumber(remote_jid);
+    // Remote actions for message management (edit/delete on WhatsApp)
+    if (action === "edit_message" || action === "delete_message") {
+      const messageId = String(message_id);
+      const actionAttempts = buildMessageActionAttempts({
+        baseUrl,
+        token,
+        apiKey: UAZAPI_API_KEY,
+        action,
+        messageId,
+        text,
+      });
+
+      const actionResult = await tryAttempts(actionAttempts);
+      if (actionResult.ok) {
+        return new Response(JSON.stringify({
+          ok: true,
+          action,
+          message_id: messageId,
+          attempt: actionResult.attempt.label,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.error(`[whatsapp-send] ${action} failed:`, JSON.stringify(actionResult.attemptResults));
+      return new Response(JSON.stringify({
+        error: `All ${action} attempts failed`,
+        attempts: actionResult.attemptResults.map(a => ({ label: a.label, status: a.status })),
+      }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const number = cleanNumber(remote_jid!);
     const isMedia = !!mediaUrl;
     const msgType = isMedia ? (mediaType || "document") : "text";
 
