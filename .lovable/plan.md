@@ -1,43 +1,21 @@
 
 
-## Problema: CSV com schema duplo
+## Plano: Painel de contato mais largo + correção de overflow
 
-O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
-- Linha 1: header com 23 colunas (inclui "Nome")
-- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
+### Problema
+O painel de contato (`w-80` = 320px) está cortando conteúdo na lateral direita (ex: "R$ 0,0" truncado). Com 3 colunas (sidebar + chat list + chat + contact panel), o espaço fica apertado.
 
-Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
+### Alterações
 
-## Solução: Tornar o parser de CSV resiliente a schemas duplos
+1. **`ContactPanel.tsx`** — Aumentar largura de `w-80` (320px) para `w-96` (384px). Adicionar `overflow-hidden` no container para evitar conteúdo vazando.
 
-### Alterações em `supabase/functions/import-leads/index.ts`
+2. **`ContactPanel.tsx`** — Na grid de Compras/Receita, adicionar `overflow-hidden` nos cards e `truncate` no valor da receita para não vazar.
 
-1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
+3. **`ContactPanel.tsx`** — Nos cards de Funis, garantir `overflow-hidden` no container pai e `truncate` nos nomes longos de funil.
 
-2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
+4. **`WhatsAppChatPage.tsx`** — Reduzir largura da lista de chats de `md:w-80 lg:w-96` para `md:w-72 lg:w-80` para compensar o painel maior e dar mais espaço ao chat.
 
-3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
-
-### Detalhes técnicos
-
-No `parseCSV`, adicionar detecção de header duplicado:
-```
-// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
-const matchCount = values.filter(v => headers.includes(v.trim())).length;
-if (matchCount > headers.length * 0.5) continue;
-```
-
-Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
-```
-// Se email não tem @ mas parece telefone, e nome parece email → trocar
-if (!email.includes("@") && /^\d+$/.test(email)) {
-  const nameVal = getFieldValue(row, "nome", ...);
-  if (nameVal.includes("@")) {
-    phone = normPhone(email);
-    email = normEmail(nameVal);
-  }
-}
-```
-
-Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
+### Arquivos alterados
+- `src/components/whatsapp/ContactPanel.tsx` — largura `w-96`, overflow fixes
+- `src/pages/WhatsAppChatPage.tsx` — lista de chats `md:w-72 lg:w-80`
 
