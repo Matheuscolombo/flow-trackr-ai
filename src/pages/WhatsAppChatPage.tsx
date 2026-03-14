@@ -753,7 +753,7 @@ const WhatsAppChatPage = () => {
             c.phone === key
               ? {
                   ...c,
-                  contact_name: c.contact_name || waName,
+                  contact_name: isPhoneOnly(c.contact_name) ? (waName || c.contact_name) : c.contact_name,
                   profile_pic_url: c.profile_pic_url || imagePreview,
                   lead_id: c.lead_id || data.lead_id || null,
                 }
