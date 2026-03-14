@@ -99,8 +99,10 @@ function mediaTypeLabel(type: string): string {
 
 function detectMediaType(file: File): string {
   if (file.type.startsWith("image/")) return "image";
-  if (file.type.startsWith("audio/")) return "audio";
   if (file.type.startsWith("video/")) return "video";
+  // .ogg audio files should be sent as PTT (voice note) via the API,
+  // but stored as "audio" in DB for the player to work
+  if (file.type.startsWith("audio/") || file.name.endsWith(".ogg")) return "audio";
   return "document";
 }
 
@@ -556,7 +558,26 @@ const WhatsAppChatPage = () => {
           setSelectedChat((current) => {
             if (current && current.phone === newMsg.phone) {
               setMessages((prev) => {
+                // Exact message_id match — skip duplicate
                 if (prev.some((m) => m.message_id === newMsg.message_id)) return prev;
+                // Dedup: if there's a pending outbound msg for same phone within 10s, replace it
+                if (newMsg.direction === "outbound") {
+                  const newTs = new Date(newMsg.timestamp_msg).getTime();
+                  const pendingIdx = prev.findIndex(
+                    (m) =>
+                      m.status === "pending" &&
+                      m.direction === "outbound" &&
+                      m.message_id.startsWith("temp_") &&
+                      m.phone === newMsg.phone &&
+                      Math.abs(new Date(m.timestamp_msg).getTime() - newTs) < 10000
+                  );
+                  if (pendingIdx !== -1) {
+                    // Replace the optimistic message with the real one
+                    const updated = [...prev];
+                    updated[pendingIdx] = newMsg;
+                    return updated;
+                  }
+                }
                 const updated = [...prev, newMsg];
                 // Only auto-scroll if user is near the bottom
                 setTimeout(() => {
