@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
     const { data: workspace } = await serviceClient
       .from("workspaces")
       .select("id")
-      .eq("owner_id", user.id)
+      .eq("owner_id", userId)
       .maybeSingle();
 
     if (!workspace) {
