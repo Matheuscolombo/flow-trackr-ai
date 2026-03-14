@@ -1305,7 +1305,7 @@ const WhatsAppChatPage = () => {
                       </div>
                       {group.messages.map((msg) => (
                         <div
-                          key={msg.id}
+                          key={msgKey(msg)}
                           className={`flex mb-1 group/msg ${
                             msg.direction === "outbound" ? "justify-end" : "justify-start"
                           }`}
