@@ -1409,7 +1409,7 @@ const WhatsAppChatPage = () => {
                   </Button>
                 )}
                 <Input
-                  placeholder={editingMessageId ? "Edite a mensagem..." : "Digite uma mensagem..."}
+                  placeholder={editingMessageKey ? "Edite a mensagem..." : "Digite uma mensagem..."}
                   value={messageText}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
