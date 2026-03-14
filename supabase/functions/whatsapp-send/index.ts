@@ -328,7 +328,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    const number = cleanNumber(remote_jid);
+    // Remote actions for message management (edit/delete on WhatsApp)
+    if (action === "edit_message" || action === "delete_message") {
+      const messageId = String(message_id);
+      const actionAttempts = buildMessageActionAttempts({
+        baseUrl,
+        token,
+        apiKey: UAZAPI_API_KEY,
+        action,
+        messageId,
+        text,
+      });
+
+      const actionResult = await tryAttempts(actionAttempts);
+      if (actionResult.ok) {
+        return new Response(JSON.stringify({
+          ok: true,
+          action,
+          message_id: messageId,
+          attempt: actionResult.attempt.label,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.error(`[whatsapp-send] ${action} failed:`, JSON.stringify(actionResult.attemptResults));
+      return new Response(JSON.stringify({
+        error: `All ${action} attempts failed`,
+        attempts: actionResult.attemptResults.map(a => ({ label: a.label, status: a.status })),
+      }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const number = cleanNumber(remote_jid!);
     const isMedia = !!mediaUrl;
     const msgType = isMedia ? (mediaType || "document") : "text";
 
