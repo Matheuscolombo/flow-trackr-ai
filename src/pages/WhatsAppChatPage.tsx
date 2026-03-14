@@ -874,7 +874,7 @@ const WhatsAppChatPage = () => {
       {lightboxUrl && (
         <ImageModal src={lightboxUrl} onClose={() => setLightboxUrl(null)} />
       )}
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {/* Left: Chat List */}
       <div
         className={`w-full md:w-80 lg:w-96 border-r border-border flex flex-col shrink-0 ${
