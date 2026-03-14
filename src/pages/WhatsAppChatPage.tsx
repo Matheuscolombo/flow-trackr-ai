@@ -1377,7 +1377,7 @@ const WhatsAppChatPage = () => {
 
             {/* Input bar */}
             <div className="px-4 py-3 border-t border-border">
-              {editingMessageId && (
+              {editingMessageKey && (
                 <div className="flex items-center gap-2 px-3 py-1.5 mb-2 bg-muted/50 rounded border border-border text-xs text-muted-foreground">
                   <Pencil className="w-3 h-3 shrink-0" />
                   <span className="flex-1 truncate">Editando mensagem</span>
