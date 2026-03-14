@@ -502,14 +502,46 @@ const WhatsAppChatPage = () => {
   };
 
   // Delete individual message
-  const handleDeleteMessage = async (msgId: string) => {
-    // Remove from UI immediately (optimistic)
-    setMessages(prev => prev.filter(m => m.id !== msgId));
-    const { error } = await supabase.from("whatsapp_messages").delete().eq("id", msgId);
+  const handleDeleteMessage = async (msg: Message) => {
+    // Remove from UI immediately (optimistic), matching both local temp and server ids
+    setMessages((prev) =>
+      prev.filter((m) => m.id !== msg.id && m.message_id !== msg.message_id)
+    );
+
+    // If user is editing this same message, reset edit mode
+    setEditingMessageId((prev) => (prev === msg.id ? null : prev));
+    if (editingMessageId === msg.id) {
+      setEditingOriginalText("");
+      setMessageText("");
+    }
+
+    if (!workspaceId) return;
+
+    let deleteQuery = supabase
+      .from("whatsapp_messages")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("phone", msg.phone);
+
+    // Temp local messages don't have a real DB id yet
+    if (msg.id.startsWith("temp_")) {
+      deleteQuery = deleteQuery.eq("message_id", msg.message_id);
+    } else {
+      deleteQuery = deleteQuery.eq("id", msg.id);
+    }
+
+    const { error } = await deleteQuery;
     if (error) {
       console.error("[deleteMsg]", error);
       // Reload messages on failure
       if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+      return;
+    }
+
+    // Keep chat preview/count in sync after delete
+    await loadChats();
+    if (selectedChatRef.current?.phone === msg.phone) {
+      await loadMessages(msg.phone);
     }
   };
 
@@ -525,15 +557,45 @@ const WhatsAppChatPage = () => {
     if (!editingMessageId) return;
     const newBody = messageText.trim();
     if (!newBody) return;
-    const { error } = await supabase
+
+    const editingMessage = messages.find((m) => m.id === editingMessageId);
+    if (!editingMessage || !workspaceId) return;
+
+    let updateQuery = supabase
       .from("whatsapp_messages")
       .update({ body: newBody })
-      .eq("id", editingMessageId);
-    if (error) { console.error("[editMsg]", error); return; }
-    setMessages(prev => prev.map(m => m.id === editingMessageId ? { ...m, body: newBody } : m));
+      .eq("workspace_id", workspaceId)
+      .eq("phone", editingMessage.phone);
+
+    if (editingMessage.id.startsWith("temp_")) {
+      updateQuery = updateQuery.eq("message_id", editingMessage.message_id);
+    } else {
+      updateQuery = updateQuery.eq("id", editingMessage.id);
+    }
+
+    const { error } = await updateQuery;
+    if (error) {
+      console.error("[editMsg]", error);
+      return;
+    }
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === editingMessage.id || m.message_id === editingMessage.message_id
+          ? { ...m, body: newBody }
+          : m
+      )
+    );
+
     setEditingMessageId(null);
     setEditingOriginalText("");
     setMessageText("");
+
+    // Keep chat preview synced after edit
+    await loadChats();
+    if (selectedChatRef.current?.phone === editingMessage.phone) {
+      await loadMessages(editingMessage.phone);
+    }
   };
 
   // Cancel editing
@@ -612,13 +674,26 @@ const WhatsAppChatPage = () => {
           const eventType = payload.eventType;
           const newMsg = payload.new as Message;
 
-          // Handle UPDATE events (status changes)
+          // Handle UPDATE events (status/body edits)
           if (eventType === "UPDATE") {
             setMessages((prev) =>
               prev.map((m) =>
-                m.message_id === newMsg.message_id
-                  ? { ...m, status: newMsg.status }
+                m.id === newMsg.id || m.message_id === newMsg.message_id
+                  ? { ...m, ...newMsg }
                   : m
+              )
+            );
+            return;
+          }
+
+          // Handle DELETE events
+          if (eventType === "DELETE") {
+            const oldMsg = payload.old as Partial<Message>;
+            setMessages((prev) =>
+              prev.filter(
+                (m) =>
+                  m.id !== oldMsg.id &&
+                  m.message_id !== oldMsg.message_id
               )
             );
             return;
@@ -1236,7 +1311,7 @@ const WhatsAppChatPage = () => {
                                     Editar
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuItem onSelect={() => handleDeleteMessage(msg.id)} className="text-xs gap-2 text-destructive focus:text-destructive">
+                                <DropdownMenuItem onSelect={() => handleDeleteMessage(msg)} className="text-xs gap-2 text-destructive focus:text-destructive">
                                   <Trash2 className="w-3.5 h-3.5" />
                                   Excluir
                                 </DropdownMenuItem>
