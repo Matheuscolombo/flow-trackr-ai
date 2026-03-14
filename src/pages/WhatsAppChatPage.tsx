@@ -23,6 +23,7 @@ import {
   CheckCheck,
   PanelRightOpen,
   PanelRightClose,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -434,6 +435,32 @@ const WhatsAppChatPage = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialChatsLoaded = useRef(false);
   const selectedChatRef = useRef<Chat | null>(null);
+  const [deletingChat, setDeletingChat] = useState<string | null>(null);
+
+  // Delete all messages for a chat (phone)
+  const handleDeleteChat = async (phone: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Excluir todas as mensagens de ${phone}?`)) return;
+    setDeletingChat(phone);
+    try {
+      const { error } = await supabase
+        .from("whatsapp_messages")
+        .delete()
+        .eq("phone", phone)
+        .eq("workspace_id", workspaceId!);
+      if (error) throw error;
+      setChats((prev) => prev.filter((c) => c.phone !== phone));
+      if (selectedChat?.phone === phone) {
+        setSelectedChat(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error("[deleteChat]", err);
+      alert("Erro ao excluir conversa.");
+    } finally {
+      setDeletingChat(null);
+    }
+  };
 
   const accessToken = session?.access_token || "";
 
@@ -936,12 +963,12 @@ const WhatsAppChatPage = () => {
           ) : (
             <div className="py-1">
               {filteredChats.map((chat) => (
-                <button
+                <div
                   key={chat.phone}
-                  onClick={() => setSelectedChat(chat)}
-                  className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${
+                  className={`relative group flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 cursor-pointer ${
                     selectedChat?.phone === chat.phone ? "bg-muted" : ""
                   }`}
+                  onClick={() => setSelectedChat(chat)}
                 >
                   {chat.profile_pic_url ? (
                     <img src={chat.profile_pic_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 mt-0.5" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling && ((e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>'); }} />
@@ -969,7 +996,20 @@ const WhatsAppChatPage = () => {
                       {chat.last_message}
                     </p>
                   </div>
-                </button>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => handleDeleteChat(chat.phone, e)}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10"
+                    title="Excluir conversa"
+                    disabled={deletingChat === chat.phone}
+                  >
+                    {deletingChat === chat.phone ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5 text-destructive/70 hover:text-destructive" />
+                    )}
+                  </button>
+                </div>
               ))}
             </div>
           )}
