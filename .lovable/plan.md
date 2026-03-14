@@ -1,43 +1,20 @@
 
 
-## Problema: CSV com schema duplo
+## Problema: Enriquecimento instavel (nome/foto aparece e some)
 
-O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
-- Linha 1: header com 23 colunas (inclui "Nome")
-- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
+Dois bugs causam o comportamento intermitente:
 
-Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
+### Bug 1: Backend nao atualiza nome do lead quando ja tem telefone como nome
+A Edge Function `whatsapp-contact-info` (linha 160) so atualiza o nome do lead quando `!lead.name`. Mas o lead ja tem `name = "+5544998685747"` (o telefone), entao a condicao `!lead.name` e `false` e nunca grava o nome real "Lucas Carli" no banco.
 
-## Solução: Tornar o parser de CSV resiliente a schemas duplos
+**Fix**: Adicionar logica `isPhoneOnly` na Edge Function para tambem atualizar quando o nome e apenas um numero de telefone.
 
-### Alterações em `supabase/functions/import-leads/index.ts`
+### Bug 2: Frontend sobrescreve dados enriquecidos a cada polling
+`loadChats()` faz `setChats(data.chats || [])` a cada 10s, substituindo completamente o estado local. Como o servidor ainda retorna `contact_name: "+5544998685747"` (porque o Bug 1 impediu a gravacao), o nome enriquecido localmente some.
 
-1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
+**Fix**: Em `loadChats()`, fazer merge dos dados do servidor com o cache de enriquecimento local. Usar um `enrichedCacheRef` para guardar nomes/fotos ja obtidos e aplica-los sobre os dados do servidor.
 
-2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
-
-3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
-
-### Detalhes técnicos
-
-No `parseCSV`, adicionar detecção de header duplicado:
-```
-// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
-const matchCount = values.filter(v => headers.includes(v.trim())).length;
-if (matchCount > headers.length * 0.5) continue;
-```
-
-Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
-```
-// Se email não tem @ mas parece telefone, e nome parece email → trocar
-if (!email.includes("@") && /^\d+$/.test(email)) {
-  const nameVal = getFieldValue(row, "nome", ...);
-  if (nameVal.includes("@")) {
-    phone = normPhone(email);
-    email = normEmail(nameVal);
-  }
-}
-```
-
-Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
+### Arquivos alterados
+1. `supabase/functions/whatsapp-contact-info/index.ts` -- adicionar `isPhoneOnly` e usá-la na condicao de update do lead name
+2. `src/pages/WhatsAppChatPage.tsx` -- criar cache de enriquecimento e aplicar merge no `loadChats` em vez de substituir cegamente
 
