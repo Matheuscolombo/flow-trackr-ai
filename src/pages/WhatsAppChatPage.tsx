@@ -693,6 +693,10 @@ const WhatsAppChatPage = () => {
 
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const mediaType = detectMediaType(file);
+    const lowerMime = (file.type || "").toLowerCase();
+    const lowerName = (file.name || "").toLowerCase();
+    const isVoiceNoteOgg = lowerMime.includes("audio/ogg") || lowerName.endsWith(".ogg");
+    const sendMediaType = isVoiceNoteOgg ? "ptt" : mediaType;
     const localPreviewUrl = URL.createObjectURL(file);
 
     const optimisticMsg: Message = {
@@ -735,7 +739,8 @@ const WhatsAppChatPage = () => {
         instance_id: instanceId,
         remote_jid: selectedChat.remote_jid,
         mediaUrl: publicUrl,
-        mediaType,
+        mediaType: sendMediaType,
+        mediaMimeType: file.type || undefined,
         caption: captionText || undefined,
         fileName: file.name,
       });

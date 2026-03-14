@@ -169,12 +169,13 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { instance_id, remote_jid, text, mediaUrl, mediaType, caption, fileName } = body as {
+    const { instance_id, remote_jid, text, mediaUrl, mediaType, mediaMimeType, caption, fileName } = body as {
       instance_id: string;
       remote_jid: string;
       text?: string;
       mediaUrl?: string;
       mediaType?: string;
+      mediaMimeType?: string;
       caption?: string;
       fileName?: string;
     };
@@ -237,11 +238,18 @@ Deno.serve(async (req) => {
     const isMedia = !!mediaUrl;
     const msgType = isMedia ? (mediaType || "document") : "text";
 
-    // For .ogg audio, send as PTT (voice note) to UAZAPI but store as "audio" in DB
-    const isOggAudio = isMedia && (mediaType === "audio" || mediaType === "ptt") &&
-      (mediaUrl!.endsWith(".ogg") || mediaUrl!.includes(".ogg?"));
-    const apiSendType = isOggAudio ? "ptt" : msgType;
-    const dbMessageType = (msgType === "ptt") ? "audio" : msgType;
+    const normalizedUrl = (mediaUrl || "").toLowerCase();
+    const normalizedFileName = (fileName || "").toLowerCase();
+    const normalizedMime = (mediaMimeType || "").toLowerCase();
+
+    // Robust PTT detection for .ogg voice notes
+    const isOggAudio = isMedia && (
+      normalizedMime.includes("audio/ogg") ||
+      normalizedFileName.endsWith(".ogg") ||
+      normalizedUrl.includes(".ogg")
+    );
+    const apiSendType = isMedia && (msgType === "ptt" || isOggAudio) ? "ptt" : msgType;
+    const dbMessageType = apiSendType === "ptt" ? "audio" : msgType;
 
     console.log(`[whatsapp-send] Sending ${apiSendType} (db:${dbMessageType}) to ${number} via ${inst.instance_name} at ${baseUrl}`);
 
@@ -276,7 +284,7 @@ Deno.serve(async (req) => {
         message_type: dbMessageType,
         body: text || caption || null,
         media_url: mediaUrl || null,
-        media_mime_type: null,
+        media_mime_type: mediaMimeType || null,
         status: "sent",
         timestamp_msg: new Date().toISOString(),
         payload_raw: typeof resBody === "object" ? resBody : { raw: resBody },
