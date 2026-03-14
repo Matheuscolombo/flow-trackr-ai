@@ -169,12 +169,13 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { instance_id, remote_jid, text, mediaUrl, mediaType, caption, fileName } = body as {
+    const { instance_id, remote_jid, text, mediaUrl, mediaType, mediaMimeType, caption, fileName } = body as {
       instance_id: string;
       remote_jid: string;
       text?: string;
       mediaUrl?: string;
       mediaType?: string;
+      mediaMimeType?: string;
       caption?: string;
       fileName?: string;
     };
