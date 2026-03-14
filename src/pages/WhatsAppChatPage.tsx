@@ -526,39 +526,45 @@ const WhatsAppChatPage = () => {
 
   // Delete individual message
   const handleDeleteMessage = async (msg: Message) => {
-    // Remove from UI immediately (optimistic), matching both local temp and server ids
-    setMessages((prev) =>
-      prev.filter((m) => m.id !== msg.id && m.message_id !== msg.message_id)
-    );
+    const key = msgKey(msg);
+    console.log("[msg-action] DELETE key:", key, "id:", msg.id, "message_id:", msg.message_id);
+
+    // Optimistic remove by canonical key
+    setMessages((prev) => dedupeMessages(prev.filter((m) => msgKey(m) !== key)));
 
     // If user is editing this same message, reset edit mode
-    setEditingMessageId((prev) => (prev === msg.id ? null : prev));
-    if (editingMessageId === msg.id) {
+    if (editingMessageKey === key) {
+      setEditingMessageKey(null);
       setEditingOriginalText("");
       setMessageText("");
     }
 
     if (!workspaceId) return;
 
-    let deleteQuery = supabase
-      .from("whatsapp_messages")
-      .delete()
-      .eq("workspace_id", workspaceId)
-      .eq("phone", msg.phone);
-
-    // Temp local messages don't have a real DB id yet
-    if (msg.id.startsWith("temp_")) {
-      deleteQuery = deleteQuery.eq("message_id", msg.message_id);
-    } else {
-      deleteQuery = deleteQuery.eq("id", msg.id);
+    // Try delete by id first, then fallback to message_id
+    let deleted = false;
+    if (!msg.id.startsWith("temp_")) {
+      const { error, count } = await supabase
+        .from("whatsapp_messages")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("id", msg.id);
+      console.log("[msg-action] DELETE by id result:", { error, count });
+      if (!error) deleted = true;
     }
 
-    const { error } = await deleteQuery;
-    if (error) {
-      console.error("[deleteMsg]", error);
-      // Reload messages on failure
-      if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
-      return;
+    if (!deleted && msg.message_id && !msg.message_id.startsWith("temp_")) {
+      const { error, count } = await supabase
+        .from("whatsapp_messages")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("message_id", msg.message_id);
+      console.log("[msg-action] DELETE by message_id result:", { error, count });
+      if (error) {
+        console.error("[deleteMsg] fallback failed:", error);
+        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        return;
+      }
     }
 
     // Keep chat preview/count in sync after delete
@@ -570,47 +576,66 @@ const WhatsAppChatPage = () => {
 
   // Start editing message
   const startEditMessage = (msg: Message) => {
-    setEditingMessageId(msg.id);
+    const key = msgKey(msg);
+    console.log("[msg-action] EDIT start key:", key, "id:", msg.id);
+    setEditingMessageKey(key);
     setEditingOriginalText(msg.body || "");
     setMessageText(msg.body || "");
   };
 
   // Save edited message
   const saveEditMessage = async () => {
-    if (!editingMessageId) return;
+    if (!editingMessageKey) return;
     const newBody = messageText.trim();
     if (!newBody) return;
 
-    const editingMessage = messages.find((m) => m.id === editingMessageId);
-    if (!editingMessage || !workspaceId) return;
-
-    let updateQuery = supabase
-      .from("whatsapp_messages")
-      .update({ body: newBody })
-      .eq("workspace_id", workspaceId)
-      .eq("phone", editingMessage.phone);
-
-    if (editingMessage.id.startsWith("temp_")) {
-      updateQuery = updateQuery.eq("message_id", editingMessage.message_id);
-    } else {
-      updateQuery = updateQuery.eq("id", editingMessage.id);
-    }
-
-    const { error } = await updateQuery;
-    if (error) {
-      console.error("[editMsg]", error);
+    // Resolve by canonical key from current state
+    const editingMessage = messages.find((m) => msgKey(m) === editingMessageKey);
+    if (!editingMessage || !workspaceId) {
+      console.error("[editMsg] message not found for key:", editingMessageKey);
+      cancelEdit();
       return;
     }
 
+    console.log("[msg-action] EDIT save key:", editingMessageKey, "id:", editingMessage.id, "message_id:", editingMessage.message_id);
+
+    // Try update by id first
+    let updated = false;
+    if (!editingMessage.id.startsWith("temp_")) {
+      const { error } = await supabase
+        .from("whatsapp_messages")
+        .update({ body: newBody })
+        .eq("workspace_id", workspaceId)
+        .eq("id", editingMessage.id);
+      if (!error) updated = true;
+      else console.warn("[editMsg] update by id failed:", error);
+    }
+
+    // Fallback: update by message_id
+    if (!updated && editingMessage.message_id && !editingMessage.message_id.startsWith("temp_")) {
+      const { error } = await supabase
+        .from("whatsapp_messages")
+        .update({ body: newBody })
+        .eq("workspace_id", workspaceId)
+        .eq("message_id", editingMessage.message_id);
+      if (error) {
+        console.error("[editMsg] fallback failed:", error);
+        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        cancelEdit();
+        return;
+      }
+    }
+
+    // Optimistic update in state
     setMessages((prev) =>
-      prev.map((m) =>
-        m.id === editingMessage.id || m.message_id === editingMessage.message_id
-          ? { ...m, body: newBody }
-          : m
+      dedupeMessages(
+        prev.map((m) =>
+          msgKey(m) === editingMessageKey ? { ...m, body: newBody } : m
+        )
       )
     );
 
-    setEditingMessageId(null);
+    setEditingMessageKey(null);
     setEditingOriginalText("");
     setMessageText("");
 
