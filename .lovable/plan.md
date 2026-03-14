@@ -1,40 +1,43 @@
 
 
-## Diagnóstico Confirmado
+## Problema: CSV com schema duplo
 
-Os logs da Edge Function mostram o erro exato:
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-```text
-ReferenceError: UAZAPI_API_KEY is not defined
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
+
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
+
+### Alterações em `supabase/functions/import-leads/index.ts`
+
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
+
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
+
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
+
+### Detalhes técnicos
+
+No `parseCSV`, adicionar detecção de header duplicado:
+```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
 ```
 
-A variável `UAZAPI_API_KEY` é usada na linha 337 de `whatsapp-send/index.ts` mas **nunca foi declarada**. Isso causa um crash imediato quando `action` é `edit_message` ou `delete_message`, antes de qualquer tentativa de chamar a UAZAPI.
-
-Há também um segundo problema: a autenticação usa `auth.getUser()` que falha com tokens ES256 (mesmo bug que já foi corrigido em `whatsapp-chats`).
-
----
-
-## Plano de Correção
-
-### 1. Corrigir `whatsapp-send/index.ts`
-
-**a) Declarar `UAZAPI_API_KEY`** no início da função handler:
-```typescript
-const UAZAPI_API_KEY = Deno.env.get("UAZAPI_API_KEY") || null;
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
 ```
 
-**b) Migrar auth de `getUser()` para `getClaims()`** (mesmo padrão usado em `whatsapp-chats`):
-- Extrair token do header Authorization
-- Usar `userClient.auth.getClaims(token)` 
-- Extrair `userId` de `claimsData.claims.sub`
-- Usar `userId` no filtro de workspace ownership
-
-### 2. Deploy e teste
-
-Após deploy, a função conseguirá:
-- Autenticar o usuário corretamente (ES256)
-- Chamar `POST /message/edit` e `POST /message/delete` na UAZAPI sem crash
-
-### Arquivo alterado
-- `supabase/functions/whatsapp-send/index.ts`
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 
