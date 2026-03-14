@@ -435,6 +435,32 @@ const WhatsAppChatPage = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialChatsLoaded = useRef(false);
   const selectedChatRef = useRef<Chat | null>(null);
+  const [deletingChat, setDeletingChat] = useState<string | null>(null);
+
+  // Delete all messages for a chat (phone)
+  const handleDeleteChat = async (phone: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(`Excluir todas as mensagens de ${phone}?`)) return;
+    setDeletingChat(phone);
+    try {
+      const { error } = await supabase
+        .from("whatsapp_messages")
+        .delete()
+        .eq("phone", phone)
+        .eq("workspace_id", workspaceId!);
+      if (error) throw error;
+      setChats((prev) => prev.filter((c) => c.phone !== phone));
+      if (selectedChat?.phone === phone) {
+        setSelectedChat(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      console.error("[deleteChat]", err);
+      alert("Erro ao excluir conversa.");
+    } finally {
+      setDeletingChat(null);
+    }
+  };
 
   const accessToken = session?.access_token || "";
 
