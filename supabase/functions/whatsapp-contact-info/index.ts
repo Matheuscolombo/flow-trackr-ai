@@ -8,16 +8,13 @@ const corsHeaders = {
 
 /**
  * Generate phone variant with/without 9th digit for Brazilian numbers.
- * 13-digit (55+DDD+9+8digits) ↔ 12-digit (55+DDD+8digits)
  */
 function phoneVariant(phone: string): string | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 13 && digits.startsWith("55")) {
-    // Remove 9th digit: 55 XX 9 XXXX XXXX → 55 XX XXXX XXXX
     return `+${digits.slice(0, 4)}${digits.slice(5)}`;
   }
   if (digits.length === 12 && digits.startsWith("55")) {
-    // Add 9th digit: 55 XX XXXX XXXX → 55 XX 9 XXXX XXXX
     return `+${digits.slice(0, 4)}9${digits.slice(4)}`;
   }
   return null;
@@ -29,22 +26,31 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization") || "";
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Verify user
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !user) {
+    // Verify user via getClaims (ES256 compatible)
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const token = authHeader.replace("Bearer ", "");
+    const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
+    if (claimsErr || !claimsData?.claims) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userId = claimsData.claims.sub as string;
 
     const url = new URL(req.url);
     const instanceId = url.searchParams.get("instance_id");
@@ -76,7 +82,7 @@ Deno.serve(async (req) => {
       .from("workspaces")
       .select("id")
       .eq("id", instance.workspace_id)
-      .eq("owner_id", user.id)
+      .eq("owner_id", userId)
       .maybeSingle();
 
     if (!workspace) {
@@ -88,23 +94,21 @@ Deno.serve(async (req) => {
 
     // Call UAZAPI /chat/details
     const baseUrl = instance.server_url || Deno.env.get("UAZAPI_URL");
-    const token = instance.api_token || Deno.env.get("UAZAPI_API_KEY");
+    const apiToken = instance.api_token || Deno.env.get("UAZAPI_API_KEY");
 
-    if (!baseUrl || !token) {
+    if (!baseUrl || !apiToken) {
       return new Response(JSON.stringify({ error: "UAZAPI not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Normalize phone for UAZAPI (just digits)
     const phoneDigits = phone.replace(/\D/g, "");
-
     console.log(`[contact-info] fetching details for ${phoneDigits} from ${baseUrl}`);
 
     const detailsRes = await fetch(`${baseUrl}/chat/details`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", token },
+      headers: { "Content-Type": "application/json", token: apiToken },
       body: JSON.stringify({ number: phoneDigits, preview: true }),
     });
 
