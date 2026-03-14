@@ -432,6 +432,8 @@ const WhatsAppChatPage = () => {
   const [showContactPanel, setShowContactPanel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialChatsLoaded = useRef(false);
+  const selectedChatRef = useRef<Chat | null>(null);
 
   const accessToken = session?.access_token || "";
 
@@ -439,9 +441,13 @@ const WhatsAppChatPage = () => {
   const loadChats = useCallback(async () => {
     if (!accessToken) return;
     try {
-      setLoadingChats(true);
+      // Only show spinner on first load, not on background polls
+      if (!initialChatsLoaded.current) {
+        setLoadingChats(true);
+      }
       const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
       setChats(data.chats || []);
+      initialChatsLoaded.current = true;
     } catch (e) {
       console.error("[loadChats] error:", e);
     } finally {
@@ -463,13 +469,18 @@ const WhatsAppChatPage = () => {
         accessToken
       );
       setMessages(data.messages || []);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "instant" }), 100);
     } catch (e) {
       console.error("[loadMessages] error:", e);
     } finally {
       setLoadingMessages(false);
     }
   }, [accessToken]);
+
+  // Keep ref in sync
+  useEffect(() => {
+    selectedChatRef.current = selectedChat;
+  }, [selectedChat]);
 
   useEffect(() => {
     if (selectedChat) {
@@ -555,46 +566,43 @@ const WhatsAppChatPage = () => {
           });
 
           // If this chat is selected, add message (smart scroll)
-          setSelectedChat((current) => {
-            if (current && current.phone === newMsg.phone) {
-              setMessages((prev) => {
-                // Exact message_id match — skip duplicate
-                if (prev.some((m) => m.message_id === newMsg.message_id)) return prev;
-                // Dedup: if there's a pending outbound msg for same phone within 10s, replace it
-                if (newMsg.direction === "outbound") {
-                  const newTs = new Date(newMsg.timestamp_msg).getTime();
-                  const pendingIdx = prev.findIndex(
-                    (m) =>
-                      m.status === "pending" &&
-                      m.direction === "outbound" &&
-                      m.message_id.startsWith("temp_") &&
-                      m.phone === newMsg.phone &&
-                      Math.abs(new Date(m.timestamp_msg).getTime() - newTs) < 10000
-                  );
-                  if (pendingIdx !== -1) {
-                    // Replace the optimistic message with the real one
-                    const updated = [...prev];
-                    updated[pendingIdx] = newMsg;
-                    return updated;
-                  }
+          const current = selectedChatRef.current;
+          if (current && current.phone === newMsg.phone) {
+            setMessages((prev) => {
+              // Exact message_id match — skip duplicate
+              if (prev.some((m) => m.message_id === newMsg.message_id)) return prev;
+              // Dedup: if there's a pending outbound msg for same phone within 10s, replace it
+              if (newMsg.direction === "outbound") {
+                const newTs = new Date(newMsg.timestamp_msg).getTime();
+                const pendingIdx = prev.findIndex(
+                  (m) =>
+                    m.status === "pending" &&
+                    m.direction === "outbound" &&
+                    m.message_id.startsWith("temp_") &&
+                    m.phone === newMsg.phone &&
+                    Math.abs(new Date(m.timestamp_msg).getTime() - newTs) < 10000
+                );
+                if (pendingIdx !== -1) {
+                  const updated = [...prev];
+                  updated[pendingIdx] = newMsg;
+                  return updated;
                 }
-                const updated = [...prev, newMsg];
-                // Only auto-scroll if user is near the bottom
-                setTimeout(() => {
-                  const el = messagesEndRef.current;
-                  if (!el) return;
-                  const container = el.closest('[data-radix-scroll-area-viewport]');
-                  if (!container) { el.scrollIntoView({ behavior: "smooth" }); return; }
-                  const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-                  if (distFromBottom < 150) {
-                    el.scrollIntoView({ behavior: "smooth" });
-                  }
-                }, 50);
-                return updated;
-              });
-            }
-            return current;
-          });
+              }
+              const updated = [...prev, newMsg];
+              // Only auto-scroll if user is near the bottom
+              setTimeout(() => {
+                const el = messagesEndRef.current;
+                if (!el) return;
+                const container = el.closest('[data-radix-scroll-area-viewport]');
+                if (!container) { el.scrollIntoView({ behavior: "smooth" }); return; }
+                const distFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+                if (distFromBottom < 150) {
+                  el.scrollIntoView({ behavior: "smooth" });
+                }
+              }, 50);
+              return updated;
+            });
+          }
         }
       )
       .subscribe();
@@ -866,7 +874,7 @@ const WhatsAppChatPage = () => {
       {lightboxUrl && (
         <ImageModal src={lightboxUrl} onClose={() => setLightboxUrl(null)} />
       )}
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-full overflow-hidden">
       {/* Left: Chat List */}
       <div
         className={`w-full md:w-80 lg:w-96 border-r border-border flex flex-col shrink-0 ${

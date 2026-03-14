@@ -1,41 +1,43 @@
 
 
-## Diagnostico: Chat "pulando" a cada 10 segundos
+## Problema: CSV com schema duplo
 
-### Causa Raiz Identificada
+O arquivo `desafio_cold.csv` tem duas estruturas misturadas:
+- Linha 1: header com 23 colunas (inclui "Nome")
+- Linha 3: segundo header com 22 colunas (sem "Nome"), que desloca todos os dados subsequentes em 1 posição
 
-A session replay confirma o problema: **a cada 10 segundos** o chat list mostra spinner (loading) e depois recarrega. Isso acontece porque o polling de `loadChats` (linha 610) chama `setLoadingChats(true)` em TODA chamada, nao apenas na primeira. Isso faz a lista de conversas desaparecer e reaparecer a cada 10s, causando o "pulo".
+Isso faz com que a coluna "WhatsApp com DDD" receba `{utm_source}` e "Seu e-mail" receba o número de telefone — ambos inválidos para seus campos.
 
-Problemas encontrados:
+## Solução: Tornar o parser de CSV resiliente a schemas duplos
 
-1. **`loadChats` mostra spinner a cada poll** (linhas 441-449): `setLoadingChats(true)` e chamado toda vez, fazendo toda a lista de chats piscar/desaparecer e reaparecer
-2. **Layout `h-screen` dentro de `overflow-auto`** (AppShell tem `main.overflow-auto` e WhatsAppChatPage usa `h-screen`): isso pode causar scroll no container pai
-3. **Realtime handler usa `setSelectedChat` como getter** (linha 558): anti-pattern que pode causar re-renders desnecessarios
+### Alterações em `supabase/functions/import-leads/index.ts`
 
-### Correcoes
+1. **Detectar e pular linhas-header duplicadas** no `parseCSV` — se uma linha de dados tiver valores que coincidem com nomes de colunas conhecidos, pular essa linha
 
-**Arquivo: `src/pages/WhatsAppChatPage.tsx`**
+2. **Realinhar colunas quando a contagem é diferente** — quando uma linha tem N-1 campos vs N headers, detectar a coluna ausente comparando os valores com os headers da segunda linha-header encontrada, e mapear usando esse header alternativo
 
-1. **Nao mostrar spinner em polls subsequentes**: Usar um `ref` para saber se ja carregou uma vez. So mostrar loading na primeira carga.
-2. **Trocar `h-screen` por `h-full`**: O componente ja esta dentro do `AppShell` que tem `h-screen`, entao deve usar `h-full` para ocupar o espaco disponivel.
-3. **Refatorar realtime handler**: Extrair a logica de mensagens do `setSelectedChat` callback, usando `useRef` para acessar `selectedChat` atual sem causar re-render.
-4. **Remover `scrollIntoView` agressivo no `loadMessages`**: Ao carregar mensagens iniciais, fazer scroll silencioso (sem animacao) para evitar efeito de "pulo".
+3. **Fallback inteligente nos campos de contato** — se email e telefone estão vazios/inválidos após o mapeamento normal, verificar se o campo "nome" contém um email válido (padrão `@`) e se o campo "email" contém apenas dígitos (telefone), e trocar automaticamente
 
-### Detalhes tecnicos
+### Detalhes técnicos
 
-```text
-Antes (bugado):
-  loadChats() → setLoadingChats(true) → spinner → fetch → setLoadingChats(false) → lista reaparece
-  (repete a cada 10s)
-
-Depois (corrigido):
-  loadChats() → if (firstLoad) setLoadingChats(true) → fetch → setChats(...) → setLoadingChats(false)
-  (polls subsequentes atualizam silenciosamente, sem spinner)
+No `parseCSV`, adicionar detecção de header duplicado:
+```
+// Se >50% dos valores da linha coincidem com headers, é uma linha-header → pular
+const matchCount = values.filter(v => headers.includes(v.trim())).length;
+if (matchCount > headers.length * 0.5) continue;
 ```
 
-Mudancas especificas:
-- Adicionar `initialLoadDone` ref, so setar `loadingChats=true` quando `!initialLoadDone.current`
-- Mudar `h-screen` para `h-full` no container principal
-- Usar `selectedChatRef` para acessar `selectedChat` no realtime handler sem closure stale
-- `scrollIntoView` no `loadMessages` usar `block: "end"` sem `behavior: "smooth"` na carga inicial
+Na lógica de extração de contato (tanto `handleFunnelImport` quanto `handleBackfill`), adicionar fallback:
+```
+// Se email não tem @ mas parece telefone, e nome parece email → trocar
+if (!email.includes("@") && /^\d+$/.test(email)) {
+  const nameVal = getFieldValue(row, "nome", ...);
+  if (nameVal.includes("@")) {
+    phone = normPhone(email);
+    email = normEmail(nameVal);
+  }
+}
+```
+
+Isso resolve tanto o CSV atual quanto CSVs futuros com problemas similares de schema misto.
 
