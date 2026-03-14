@@ -495,10 +495,10 @@ const WhatsAppChatPage = () => {
     }
   }, [accessToken, chats]);
 
-  // Handle typing → send composing presence
+  // Handle typing → send composing presence (skip when editing)
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessageText(e.target.value);
-    if (e.target.value.trim()) sendPresence("composing");
+    if (e.target.value.trim() && !editingMessageId) sendPresence("composing");
   };
 
   // Delete individual message
@@ -1231,12 +1231,12 @@ const WhatsAppChatPage = () => {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent side="left" align="start" className="min-w-[120px]">
                                 {msg.direction === "outbound" && msg.message_type === "text" && (
-                                  <DropdownMenuItem onClick={() => startEditMessage(msg)} className="text-xs gap-2">
+                                  <DropdownMenuItem onSelect={() => startEditMessage(msg)} className="text-xs gap-2">
                                     <Pencil className="w-3.5 h-3.5" />
                                     Editar
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuItem onClick={() => handleDeleteMessage(msg.id)} className="text-xs gap-2 text-destructive focus:text-destructive">
+                                <DropdownMenuItem onSelect={() => handleDeleteMessage(msg.id)} className="text-xs gap-2 text-destructive focus:text-destructive">
                                   <Trash2 className="w-3.5 h-3.5" />
                                   Excluir
                                 </DropdownMenuItem>
@@ -1253,57 +1253,61 @@ const WhatsAppChatPage = () => {
             </ScrollArea>
 
             {/* Input bar */}
-            <div className="px-4 py-3 border-t border-border flex items-center gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
-                onChange={handleFileSelect}
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="shrink-0 h-9 w-9"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={sending || uploading}
-                title="Enviar arquivo"
-              >
-                {uploading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Paperclip className="w-4 h-4" />
-                )}
-              </Button>
+            <div className="px-4 py-3 border-t border-border">
               {editingMessageId && (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 rounded-t border border-b-0 border-border text-xs text-muted-foreground">
-                  <Pencil className="w-3 h-3" />
+                <div className="flex items-center gap-2 px-3 py-1.5 mb-2 bg-muted/50 rounded border border-border text-xs text-muted-foreground">
+                  <Pencil className="w-3 h-3 shrink-0" />
                   <span className="flex-1 truncate">Editando mensagem</span>
-                  <button onClick={cancelEdit} className="hover:text-foreground"><X className="w-3.5 h-3.5" /></button>
+                  <button onClick={cancelEdit} className="hover:text-foreground shrink-0"><X className="w-3.5 h-3.5" /></button>
                 </div>
               )}
-              <Input
-                placeholder={editingMessageId ? "Edite a mensagem..." : "Digite uma mensagem..."}
-                value={messageText}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                className={`flex-1 text-xs ${editingMessageId ? "border-primary" : ""}`}
-                disabled={sending || uploading}
-              />
-              <Button
-                size="icon"
-                onClick={editingMessageId ? saveEditMessage : handleSend}
-                disabled={!messageText.trim() || sending || uploading}
-                className="shrink-0"
-              >
-                {sending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : editingMessageId ? (
-                  <Check className="w-4 h-4" />
-                ) : (
-                  <Send className="w-4 h-4" />
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
+                  onChange={handleFileSelect}
+                />
+                {!editingMessageId && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="shrink-0 h-9 w-9"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sending || uploading}
+                    title="Enviar arquivo"
+                  >
+                    {uploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Paperclip className="w-4 h-4" />
+                    )}
+                  </Button>
                 )}
-              </Button>
+                <Input
+                  placeholder={editingMessageId ? "Edite a mensagem..." : "Digite uma mensagem..."}
+                  value={messageText}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  className={`flex-1 text-xs ${editingMessageId ? "border-primary" : ""}`}
+                  disabled={sending || uploading}
+                />
+                <Button
+                  size="icon"
+                  onClick={editingMessageId ? saveEditMessage : handleSend}
+                  disabled={!messageText.trim() || sending || uploading}
+                  className="shrink-0"
+                >
+                  {sending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : editingMessageId ? (
+                    <Check className="w-4 h-4" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
             </div>
           </>
         ) : (
