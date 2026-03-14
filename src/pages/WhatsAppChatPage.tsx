@@ -606,29 +606,38 @@ const WhatsAppChatPage = () => {
 
     console.log("[msg-action] EDIT save key:", editingMessageKey, "id:", editingMessage.id, "message_id:", editingMessage.message_id);
 
-    // Try update by id first
+    // Try update by id first (must affect at least 1 row)
     let updated = false;
     if (!editingMessage.id.startsWith("temp_")) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .update({ body: newBody })
         .eq("workspace_id", workspaceId)
-        .eq("id", editingMessage.id);
-      if (!error) updated = true;
-      else console.warn("[editMsg] update by id failed:", error);
+        .eq("id", editingMessage.id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] EDIT by id result:", { error, affected });
+      if (!error && affected > 0) updated = true;
+      else if (error) console.warn("[editMsg] update by id failed:", error);
     }
 
-    // Fallback: update by message_id
+    // Fallback: update by message_id (must affect at least 1 row)
     if (!updated && editingMessage.message_id && !editingMessage.message_id.startsWith("temp_")) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("whatsapp_messages")
         .update({ body: newBody })
         .eq("workspace_id", workspaceId)
-        .eq("message_id", editingMessage.message_id);
-      if (error) {
-        console.error("[editMsg] fallback failed:", error);
-        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        .eq("message_id", editingMessage.message_id)
+        .select("id")
+        .limit(1);
+      const affected = data?.length ?? 0;
+      console.log("[msg-action] EDIT by message_id result:", { error, affected });
+      if (error || affected === 0) {
+        console.error("[editMsg] update failed after fallback:", error || "0 rows");
+        if (selectedChatRef.current) await loadMessages(selectedChatRef.current.phone);
         cancelEdit();
+        alert("Não consegui editar essa mensagem. Tente novamente.");
         return;
       }
     }
