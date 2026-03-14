@@ -108,6 +108,61 @@ function buildMediaAttempts(
   ];
 }
 
+function buildMessageActionAttempts(params: {
+  baseUrl: string;
+  token: string;
+  apiKey?: string | null;
+  action: "edit_message" | "delete_message";
+  messageId: string;
+  text?: string;
+}): SendAttempt[] {
+  const { baseUrl, token, apiKey, action, messageId, text } = params;
+  const path = action === "edit_message" ? "/message/edit" : "/message/delete";
+  const body = action === "edit_message"
+    ? { id: messageId, text: text || "" }
+    : { id: messageId };
+
+  const attempts: SendAttempt[] = [
+    {
+      label: `${path} + token header`,
+      url: `${baseUrl}${path}`,
+      headers: { "Content-Type": "application/json", token },
+      body,
+    },
+    {
+      label: `${path} + apikey header`,
+      url: `${baseUrl}${path}`,
+      headers: { "Content-Type": "application/json", apikey: token },
+      body,
+    },
+    {
+      label: `/api${path} + token header`,
+      url: `${baseUrl}/api${path}`,
+      headers: { "Content-Type": "application/json", token },
+      body,
+    },
+  ];
+
+  if (apiKey) {
+    attempts.push(
+      {
+        label: `${path} + token + admintoken`,
+        url: `${baseUrl}${path}`,
+        headers: { "Content-Type": "application/json", token, admintoken: apiKey },
+        body,
+      },
+      {
+        label: `${path} + bearer + apikey`,
+        url: `${baseUrl}${path}`,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: apiKey },
+        body,
+      }
+    );
+  }
+
+  return attempts;
+}
+
 async function tryAttempts(attempts: SendAttempt[]) {
   const attemptResults: Array<{ label: string; status: number; snippet: string }> = [];
 
