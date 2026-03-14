@@ -154,10 +154,16 @@ Deno.serve(async (req) => {
       lead = leadVar;
     }
 
+    // Helper: detect if name is just a phone number
+    function isPhoneOnly(name: string | null): boolean {
+      if (!name) return true;
+      return /^\+?\d[\d\s()-]*$/.test(name.trim());
+    }
+
     if (lead) {
       const updates: Record<string, unknown> = {};
       if (imagePreview && !lead.profile_pic_url) updates.profile_pic_url = imagePreview;
-      if (waName && !lead.name) updates.name = waName;
+      if (waName && isPhoneOnly(lead.name)) updates.name = waName;
 
       if (Object.keys(updates).length > 0) {
         await serviceClient.from("leads").update(updates).eq("id", lead.id);

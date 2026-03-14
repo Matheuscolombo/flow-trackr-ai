@@ -782,7 +782,18 @@ const WhatsAppChatPage = () => {
         setLoadingChats(true);
       }
       const data = await fetchApi("whatsapp-chats?action=list_chats", accessToken);
-      setChats(data.chats || []);
+      const serverChats: Chat[] = data.chats || [];
+      // Merge enriched cache over server data so polling doesn't overwrite names/photos
+      const merged = serverChats.map((c) => {
+        const cached = enrichedCacheRef.current[c.phone];
+        if (!cached) return c;
+        return {
+          ...c,
+          contact_name: isPhoneOnly(c.contact_name) && cached.name ? cached.name : c.contact_name,
+          profile_pic_url: c.profile_pic_url || cached.photo || null,
+        };
+      });
+      setChats(merged);
       initialChatsLoaded.current = true;
     } catch (e) {
       console.error("[loadChats] error:", e);
