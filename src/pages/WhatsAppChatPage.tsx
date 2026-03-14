@@ -614,16 +614,16 @@ const WhatsAppChatPage = () => {
         .select("id")
         .limit(1);
       const affected = data?.length ?? 0;
-      console.log("[msg-action] DELETE by message_id result:", { error, affected });
+      console.log("[msg-action] SOFT-DELETE by message_id result:", { error, affected });
       if (error || affected === 0) {
-        console.error("[deleteMsg] delete failed after fallback:", error || "0 rows");
+        console.error("[deleteMsg] soft-delete failed after fallback:", error || "0 rows");
         if (selectedChatRef.current) await loadMessages(selectedChatRef.current.phone);
-        alert("Não consegui excluir essa mensagem. Tente novamente.");
+        alert("Não consegui marcar essa mensagem como apagada. Tente novamente.");
         return;
       }
     }
 
-    // Keep chat preview/count in sync after delete
+    // Keep chat preview/count in sync
     await loadChats();
     if (selectedChatRef.current?.phone === msg.phone) {
       await loadMessages(msg.phone);
