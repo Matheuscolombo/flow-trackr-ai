@@ -469,7 +469,7 @@ const WhatsAppChatPage = () => {
         accessToken
       );
       setMessages(data.messages || []);
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "instant" }), 100);
     } catch (e) {
       console.error("[loadMessages] error:", e);
     } finally {
