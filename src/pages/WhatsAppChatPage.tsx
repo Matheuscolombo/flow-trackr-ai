@@ -684,7 +684,7 @@ const WhatsAppChatPage = () => {
         `whatsapp-chats?action=messages&phone=${encodeURIComponent(phone)}`,
         accessToken
       );
-      setMessages(data.messages || []);
+      setMessages(dedupeMessages(data.messages || []));
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "instant" }), 100);
     } catch (e) {
       console.error("[loadMessages] error:", e);
