@@ -1490,7 +1490,7 @@ const WhatsAppChatPage = () => {
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-8 w-8 shrink-0 hidden lg:flex"
+                className="h-8 w-8 shrink-0 hidden md:flex"
                 onClick={() => setShowContactPanel(!showContactPanel)}
                 title={showContactPanel ? "Fechar painel" : "Info do contato"}
               >

@@ -258,7 +258,7 @@ export function ContactPanel({
   };
 
   return (
-    <div className="w-80 border-l border-border flex flex-col bg-background shrink-0 hidden lg:flex">
+    <div className="w-80 border-l border-border flex flex-col bg-background shrink-0 hidden md:flex">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 className="text-xs font-semibold text-foreground">Contato</h3>
