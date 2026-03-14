@@ -258,7 +258,7 @@ export function ContactPanel({
   };
 
   return (
-    <div className="w-80 border-l border-border flex flex-col bg-background shrink-0 hidden md:flex">
+    <div className="w-96 border-l border-border flex flex-col bg-background shrink-0 hidden md:flex overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 className="text-xs font-semibold text-foreground">Contato</h3>
@@ -376,12 +376,12 @@ export function ContactPanel({
                   <span className="text-xs font-medium text-foreground">Compras</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-muted rounded-md p-2 text-center">
+                  <div className="bg-muted rounded-md p-2 text-center overflow-hidden">
                     <p className="text-lg font-bold text-foreground">{lead.purchase_count}</p>
                     <p className="text-[10px] text-muted-foreground">Compras</p>
                   </div>
-                  <div className="bg-muted rounded-md p-2 text-center">
-                    <p className="text-sm font-bold text-foreground">{formatCurrency(lead.total_revenue)}</p>
+                  <div className="bg-muted rounded-md p-2 text-center overflow-hidden">
+                    <p className="text-sm font-bold text-foreground truncate">{formatCurrency(lead.total_revenue)}</p>
                     <p className="text-[10px] text-muted-foreground">Receita</p>
                   </div>
                 </div>
@@ -405,7 +405,7 @@ export function ContactPanel({
                       {funnelPositions.map((fp) => (
                         <div
                           key={fp.id}
-                          className="bg-muted rounded-md px-2.5 py-1.5 flex items-center justify-between"
+                          className="bg-muted rounded-md px-2.5 py-1.5 flex items-center justify-between overflow-hidden"
                         >
                           <div className="min-w-0">
                             <p className="text-[11px] font-medium text-foreground truncate">

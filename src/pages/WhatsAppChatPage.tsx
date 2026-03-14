@@ -1310,7 +1310,7 @@ const WhatsAppChatPage = () => {
     <div className="flex h-full overflow-hidden">
       {/* Left: Chat List */}
       <div
-        className={`w-full md:w-80 lg:w-96 border-r border-border flex flex-col shrink-0 ${
+        className={`w-full md:w-72 lg:w-80 border-r border-border flex flex-col shrink-0 ${
           selectedChat ? "hidden md:flex" : "flex"
         }`}
       >
