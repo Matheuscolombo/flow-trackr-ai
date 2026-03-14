@@ -674,13 +674,26 @@ const WhatsAppChatPage = () => {
           const eventType = payload.eventType;
           const newMsg = payload.new as Message;
 
-          // Handle UPDATE events (status changes)
+          // Handle UPDATE events (status/body edits)
           if (eventType === "UPDATE") {
             setMessages((prev) =>
               prev.map((m) =>
-                m.message_id === newMsg.message_id
-                  ? { ...m, status: newMsg.status }
+                m.id === newMsg.id || m.message_id === newMsg.message_id
+                  ? { ...m, ...newMsg }
                   : m
+              )
+            );
+            return;
+          }
+
+          // Handle DELETE events
+          if (eventType === "DELETE") {
+            const oldMsg = payload.old as Partial<Message>;
+            setMessages((prev) =>
+              prev.filter(
+                (m) =>
+                  m.id !== oldMsg.id &&
+                  m.message_id !== oldMsg.message_id
               )
             );
             return;
