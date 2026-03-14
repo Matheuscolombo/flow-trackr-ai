@@ -48,6 +48,7 @@ import { useNavigate } from "react-router-dom";
 import { format, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ContactPanel } from "@/components/whatsapp/ContactPanel";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
 const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
 
