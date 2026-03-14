@@ -1424,7 +1424,7 @@ const WhatsAppChatPage = () => {
                 >
                   {sending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : editingMessageId ? (
+                  ) : editingMessageKey ? (
                     <Check className="w-4 h-4" />
                   ) : (
                     <Send className="w-4 h-4" />
