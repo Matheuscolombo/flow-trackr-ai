@@ -99,8 +99,10 @@ function mediaTypeLabel(type: string): string {
 
 function detectMediaType(file: File): string {
   if (file.type.startsWith("image/")) return "image";
-  if (file.type.startsWith("audio/")) return "audio";
   if (file.type.startsWith("video/")) return "video";
+  // .ogg audio files should be sent as PTT (voice note) via the API,
+  // but stored as "audio" in DB for the player to work
+  if (file.type.startsWith("audio/") || file.name.endsWith(".ogg")) return "audio";
   return "document";
 }
 
