@@ -376,12 +376,12 @@ export function ContactPanel({
                   <span className="text-xs font-medium text-foreground">Compras</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-muted rounded-md p-2 text-center">
+                  <div className="bg-muted rounded-md p-2 text-center overflow-hidden">
                     <p className="text-lg font-bold text-foreground">{lead.purchase_count}</p>
                     <p className="text-[10px] text-muted-foreground">Compras</p>
                   </div>
-                  <div className="bg-muted rounded-md p-2 text-center">
-                    <p className="text-sm font-bold text-foreground">{formatCurrency(lead.total_revenue)}</p>
+                  <div className="bg-muted rounded-md p-2 text-center overflow-hidden">
+                    <p className="text-sm font-bold text-foreground truncate">{formatCurrency(lead.total_revenue)}</p>
                     <p className="text-[10px] text-muted-foreground">Receita</p>
                   </div>
                 </div>
