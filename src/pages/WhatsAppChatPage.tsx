@@ -733,6 +733,7 @@ const WhatsAppChatPage = () => {
 
   // Enrich a single chat with contact info (name/photo) from UAZAPI
   const enrichedPhonesRef = useRef<Set<string>>(new Set());
+  const enrichedCacheRef = useRef<Record<string, { name?: string; photo?: string }>>({});
 
   const enrichContact = useCallback(async (chat: Chat) => {
     if (!accessToken || !chat.instance_id) return null;
