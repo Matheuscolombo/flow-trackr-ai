@@ -106,6 +106,29 @@ function mediaTypeLabel(type: string): string {
   return labels[type] || `[${type}]`;
 }
 
+/** Canonical identity key for a message — prefer message_id (when real), fallback to id */
+function msgKey(msg: Message): string {
+  // Temp messages have message_id === id (both start with "temp_"), use id
+  if (msg.message_id && !msg.message_id.startsWith("temp_")) return msg.message_id;
+  return msg.id;
+}
+
+/** Deduplicate messages by canonical key, keeping the latest version, sorted by timestamp */
+function dedupeMessages(msgs: Message[]): Message[] {
+  const map = new Map<string, Message>();
+  for (const m of msgs) {
+    const key = msgKey(m);
+    const existing = map.get(key);
+    // Prefer non-temp versions (real DB rows) over optimistic ones
+    if (!existing || existing.id.startsWith("temp_")) {
+      map.set(key, m);
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(a.timestamp_msg).getTime() - new Date(b.timestamp_msg).getTime()
+  );
+}
+
 function detectMediaType(file: File): string {
   if (file.type.startsWith("image/")) return "image";
   if (file.type.startsWith("video/")) return "video";
@@ -444,7 +467,7 @@ const WhatsAppChatPage = () => {
   const initialChatsLoaded = useRef(false);
   const selectedChatRef = useRef<Chat | null>(null);
   const [deletingChat, setDeletingChat] = useState<string | null>(null);
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageKey, setEditingMessageKey] = useState<string | null>(null);
   const [editingOriginalText, setEditingOriginalText] = useState("");
   const lastPresenceSent = useRef(0);
 
@@ -498,44 +521,50 @@ const WhatsAppChatPage = () => {
   // Handle typing → send composing presence (skip when editing)
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessageText(e.target.value);
-    if (e.target.value.trim() && !editingMessageId) sendPresence("composing");
+    if (e.target.value.trim() && !editingMessageKey) sendPresence("composing");
   };
 
   // Delete individual message
   const handleDeleteMessage = async (msg: Message) => {
-    // Remove from UI immediately (optimistic), matching both local temp and server ids
-    setMessages((prev) =>
-      prev.filter((m) => m.id !== msg.id && m.message_id !== msg.message_id)
-    );
+    const key = msgKey(msg);
+    console.log("[msg-action] DELETE key:", key, "id:", msg.id, "message_id:", msg.message_id);
+
+    // Optimistic remove by canonical key
+    setMessages((prev) => dedupeMessages(prev.filter((m) => msgKey(m) !== key)));
 
     // If user is editing this same message, reset edit mode
-    setEditingMessageId((prev) => (prev === msg.id ? null : prev));
-    if (editingMessageId === msg.id) {
+    if (editingMessageKey === key) {
+      setEditingMessageKey(null);
       setEditingOriginalText("");
       setMessageText("");
     }
 
     if (!workspaceId) return;
 
-    let deleteQuery = supabase
-      .from("whatsapp_messages")
-      .delete()
-      .eq("workspace_id", workspaceId)
-      .eq("phone", msg.phone);
-
-    // Temp local messages don't have a real DB id yet
-    if (msg.id.startsWith("temp_")) {
-      deleteQuery = deleteQuery.eq("message_id", msg.message_id);
-    } else {
-      deleteQuery = deleteQuery.eq("id", msg.id);
+    // Try delete by id first, then fallback to message_id
+    let deleted = false;
+    if (!msg.id.startsWith("temp_")) {
+      const { error, count } = await supabase
+        .from("whatsapp_messages")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("id", msg.id);
+      console.log("[msg-action] DELETE by id result:", { error, count });
+      if (!error) deleted = true;
     }
 
-    const { error } = await deleteQuery;
-    if (error) {
-      console.error("[deleteMsg]", error);
-      // Reload messages on failure
-      if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
-      return;
+    if (!deleted && msg.message_id && !msg.message_id.startsWith("temp_")) {
+      const { error, count } = await supabase
+        .from("whatsapp_messages")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("message_id", msg.message_id);
+      console.log("[msg-action] DELETE by message_id result:", { error, count });
+      if (error) {
+        console.error("[deleteMsg] fallback failed:", error);
+        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        return;
+      }
     }
 
     // Keep chat preview/count in sync after delete
@@ -547,47 +576,66 @@ const WhatsAppChatPage = () => {
 
   // Start editing message
   const startEditMessage = (msg: Message) => {
-    setEditingMessageId(msg.id);
+    const key = msgKey(msg);
+    console.log("[msg-action] EDIT start key:", key, "id:", msg.id);
+    setEditingMessageKey(key);
     setEditingOriginalText(msg.body || "");
     setMessageText(msg.body || "");
   };
 
   // Save edited message
   const saveEditMessage = async () => {
-    if (!editingMessageId) return;
+    if (!editingMessageKey) return;
     const newBody = messageText.trim();
     if (!newBody) return;
 
-    const editingMessage = messages.find((m) => m.id === editingMessageId);
-    if (!editingMessage || !workspaceId) return;
-
-    let updateQuery = supabase
-      .from("whatsapp_messages")
-      .update({ body: newBody })
-      .eq("workspace_id", workspaceId)
-      .eq("phone", editingMessage.phone);
-
-    if (editingMessage.id.startsWith("temp_")) {
-      updateQuery = updateQuery.eq("message_id", editingMessage.message_id);
-    } else {
-      updateQuery = updateQuery.eq("id", editingMessage.id);
-    }
-
-    const { error } = await updateQuery;
-    if (error) {
-      console.error("[editMsg]", error);
+    // Resolve by canonical key from current state
+    const editingMessage = messages.find((m) => msgKey(m) === editingMessageKey);
+    if (!editingMessage || !workspaceId) {
+      console.error("[editMsg] message not found for key:", editingMessageKey);
+      cancelEdit();
       return;
     }
 
+    console.log("[msg-action] EDIT save key:", editingMessageKey, "id:", editingMessage.id, "message_id:", editingMessage.message_id);
+
+    // Try update by id first
+    let updated = false;
+    if (!editingMessage.id.startsWith("temp_")) {
+      const { error } = await supabase
+        .from("whatsapp_messages")
+        .update({ body: newBody })
+        .eq("workspace_id", workspaceId)
+        .eq("id", editingMessage.id);
+      if (!error) updated = true;
+      else console.warn("[editMsg] update by id failed:", error);
+    }
+
+    // Fallback: update by message_id
+    if (!updated && editingMessage.message_id && !editingMessage.message_id.startsWith("temp_")) {
+      const { error } = await supabase
+        .from("whatsapp_messages")
+        .update({ body: newBody })
+        .eq("workspace_id", workspaceId)
+        .eq("message_id", editingMessage.message_id);
+      if (error) {
+        console.error("[editMsg] fallback failed:", error);
+        if (selectedChatRef.current) loadMessages(selectedChatRef.current.phone);
+        cancelEdit();
+        return;
+      }
+    }
+
+    // Optimistic update in state
     setMessages((prev) =>
-      prev.map((m) =>
-        m.id === editingMessage.id || m.message_id === editingMessage.message_id
-          ? { ...m, body: newBody }
-          : m
+      dedupeMessages(
+        prev.map((m) =>
+          msgKey(m) === editingMessageKey ? { ...m, body: newBody } : m
+        )
       )
     );
 
-    setEditingMessageId(null);
+    setEditingMessageKey(null);
     setEditingOriginalText("");
     setMessageText("");
 
@@ -600,7 +648,7 @@ const WhatsAppChatPage = () => {
 
   // Cancel editing
   const cancelEdit = () => {
-    setEditingMessageId(null);
+    setEditingMessageKey(null);
     setEditingOriginalText("");
     setMessageText("");
   };
@@ -636,7 +684,7 @@ const WhatsAppChatPage = () => {
         `whatsapp-chats?action=messages&phone=${encodeURIComponent(phone)}`,
         accessToken
       );
-      setMessages(data.messages || []);
+      setMessages(dedupeMessages(data.messages || []));
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "instant" }), 100);
     } catch (e) {
       console.error("[loadMessages] error:", e);
@@ -677,10 +725,12 @@ const WhatsAppChatPage = () => {
           // Handle UPDATE events (status/body edits)
           if (eventType === "UPDATE") {
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === newMsg.id || m.message_id === newMsg.message_id
-                  ? { ...m, ...newMsg }
-                  : m
+              dedupeMessages(
+                prev.map((m) =>
+                  m.id === newMsg.id || m.message_id === newMsg.message_id
+                    ? { ...m, ...newMsg }
+                    : m
+                )
               )
             );
             return;
@@ -973,13 +1023,13 @@ const WhatsAppChatPage = () => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (editingMessageId) {
+      if (editingMessageKey) {
         saveEditMessage();
       } else {
         handleSend();
       }
     }
-    if (e.key === "Escape" && editingMessageId) {
+    if (e.key === "Escape" && editingMessageKey) {
       cancelEdit();
     }
   };
@@ -1255,7 +1305,7 @@ const WhatsAppChatPage = () => {
                       </div>
                       {group.messages.map((msg) => (
                         <div
-                          key={msg.id}
+                          key={msgKey(msg)}
                           className={`flex mb-1 group/msg ${
                             msg.direction === "outbound" ? "justify-end" : "justify-start"
                           }`}
@@ -1329,7 +1379,7 @@ const WhatsAppChatPage = () => {
 
             {/* Input bar */}
             <div className="px-4 py-3 border-t border-border">
-              {editingMessageId && (
+              {editingMessageKey && (
                 <div className="flex items-center gap-2 px-3 py-1.5 mb-2 bg-muted/50 rounded border border-border text-xs text-muted-foreground">
                   <Pencil className="w-3 h-3 shrink-0" />
                   <span className="flex-1 truncate">Editando mensagem</span>
@@ -1344,7 +1394,7 @@ const WhatsAppChatPage = () => {
                   accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt"
                   onChange={handleFileSelect}
                 />
-                {!editingMessageId && (
+                {!editingMessageKey && (
                   <Button
                     size="icon"
                     variant="ghost"
@@ -1361,22 +1411,22 @@ const WhatsAppChatPage = () => {
                   </Button>
                 )}
                 <Input
-                  placeholder={editingMessageId ? "Edite a mensagem..." : "Digite uma mensagem..."}
+                  placeholder={editingMessageKey ? "Edite a mensagem..." : "Digite uma mensagem..."}
                   value={messageText}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  className={`flex-1 text-xs ${editingMessageId ? "border-primary" : ""}`}
+                  className={`flex-1 text-xs ${editingMessageKey ? "border-primary" : ""}`}
                   disabled={sending || uploading}
                 />
                 <Button
                   size="icon"
-                  onClick={editingMessageId ? saveEditMessage : handleSend}
+                  onClick={editingMessageKey ? saveEditMessage : handleSend}
                   disabled={!messageText.trim() || sending || uploading}
                   className="shrink-0"
                 >
                   {sending ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : editingMessageId ? (
+                  ) : editingMessageKey ? (
                     <Check className="w-4 h-4" />
                   ) : (
                     <Send className="w-4 h-4" />
