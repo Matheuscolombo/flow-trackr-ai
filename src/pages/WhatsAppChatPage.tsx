@@ -807,6 +807,13 @@ const WhatsAppChatPage = () => {
     const lowerName = (file.name || "").toLowerCase();
     const isVoiceNoteOgg = lowerMime.includes("audio/ogg") || lowerName.endsWith(".ogg");
     const sendMediaType = isVoiceNoteOgg ? "ptt" : mediaType;
+
+    // Send "recording" presence for audio files
+    if (mediaType === "audio") {
+      lastPresenceSent.current = 0; // Force send
+      sendPresence("recording");
+    }
+
     const localPreviewUrl = URL.createObjectURL(file);
 
     const optimisticMsg: Message = {
